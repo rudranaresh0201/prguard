@@ -32,8 +32,6 @@ from .core.logging import get_logger
 
 load_dotenv()
 
-MODEL_NAME = "microsoft/phi-2"
-USE_OPENROUTER = True
 GENERATION_MAX_TIME = float(os.getenv("LLM_MAX_TIME_SECONDS", "20"))
 SECTION_TIMEOUT_SECONDS = 20.0
 FAST_MODE = os.getenv("FAST_MODE", "true").strip().lower() in {"1", "true", "yes", "on"}
@@ -211,52 +209,6 @@ def _has_obvious_repetition(text: str) -> bool:
                 return True
 
     return False
-
-
-def _post_process_gemini_answer(answer: str) -> str:
-    text = _clean_generated_answer(answer)
-    summary, key_points, explanation = _extract_sections(text)
-
-    if summary or key_points or explanation:
-        cleaned_summary = _dedupe_sentences(summary)
-
-        cleaned_points: list[str] = []
-        seen_points: set[str] = set()
-        for point in key_points:
-            point_text = _dedupe_sentences(point)
-            normalized = re.sub(r"\s+", " ", point_text).strip().lower()
-            if not normalized or normalized in seen_points:
-                continue
-            seen_points.add(normalized)
-            cleaned_points.append(point_text)
-
-        cleaned_explanation = _dedupe_sentences(explanation)
-
-        if cleaned_summary and cleaned_explanation:
-            summary_norm = {
-                re.sub(r"\s+", " ", s).strip().lower()
-                for s in _split_sentences(cleaned_summary)
-            }
-            expl_sentences = [
-                s for s in _split_sentences(cleaned_explanation)
-                if re.sub(r"\s+", " ", s).strip().lower() not in summary_norm
-            ]
-            cleaned_explanation = " ".join(expl_sentences).strip()
-
-        blocks: list[str] = ["Summary:"]
-        blocks.append(cleaned_summary if cleaned_summary else "Not enough relevant information found.")
-        blocks.append("")
-        blocks.append("Key Points:")
-        if cleaned_points:
-            blocks.extend(f"- {point}" for point in cleaned_points[:4])
-        else:
-            blocks.append("- Not enough relevant information found.")
-        blocks.append("")
-        blocks.append("Explanation:")
-        blocks.append(cleaned_explanation if cleaned_explanation else "Not enough relevant information found.")
-        return "\n".join(blocks).strip()
-
-    return _dedupe_sentences(text)
 
 
 def _format_context(context: str) -> str:
@@ -884,8 +836,8 @@ Detailed Answer:"""
         timeout=20,
     )
 
-    print("STATUS:", r.status_code)
-    print("RESPONSE:", r.text[:500])
+    logger.debug("[OPENROUTER] Response status=%s", r.status_code)
+    logger.debug("[OPENROUTER] Response preview=%s", r.text[:200])
 
     r.raise_for_status()
 

@@ -14,6 +14,7 @@ from sentence_transformers import SentenceTransformer
 
 from .core.logging import get_logger
 from .db import get_collection, get_embedder
+from .utils import chunk_text as _chunk_text_util
 
 _bm25_cache: dict[str, Any] | None = None
 _bm25_lock = threading.Lock()
@@ -155,20 +156,6 @@ def _tokenize(text: str) -> set[str]:
     }
 
 
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list[str]:
-    chunks: list[str] = []
-    cleaned = str(text or "")
-    start = 0
-    step = max(1, chunk_size - overlap)
-    while start < len(cleaned):
-        end = start + chunk_size
-        piece = cleaned[start:end]
-        if piece:
-            chunks.append(piece)
-        start += step
-    return chunks
-
-
 def _keyword_query_tokens(query: str) -> list[str]:
     keywords = _extract_query_keywords(query)
     if keywords:
@@ -257,7 +244,7 @@ def _build_bm25_corpus(
     bm25_meta: list[dict[str, Any]] = []
     for idx, raw_doc in enumerate(documents):
         metadata = metadatas[idx] if idx < len(metadatas) and isinstance(metadatas[idx], dict) else {}
-        for window_idx, window in enumerate(chunk_text(str(raw_doc or ""), chunk_size=500, overlap=100)):
+        for window_idx, window in enumerate(_chunk_text_util(str(raw_doc or ""), chunk_size=500, overlap=100)):
             cleaned_window = _normalize_chunk_text(window)
             if len(cleaned_window.split()) < 12:
                 continue
@@ -418,7 +405,7 @@ def retrieve_chunks(
         if isinstance(distance_val, (int, float)):
             semantic_score = max(0.0, 1.0 - (float(distance_val) / 2.0))
 
-        vector_windows = chunk_text(str(raw_chunk or ""), chunk_size=500, overlap=100)
+        vector_windows = _chunk_text_util(str(raw_chunk or ""), chunk_size=500, overlap=100)
         for window_idx, window in enumerate(vector_windows):
             _register_candidate(
                 text=window,
