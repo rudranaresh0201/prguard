@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 _client: Any | None = None
+_client_lock = threading.Lock()
 
 
 def _get_bucket_name() -> str:
@@ -22,19 +24,24 @@ def _get_client() -> Any:
     if _client is not None:
         return _client
 
-    endpoint = os.getenv("R2_ENDPOINT_URL", "").strip()
-    access_key = os.getenv("R2_ACCESS_KEY_ID", "").strip()
-    secret_key = os.getenv("R2_SECRET_ACCESS_KEY", "").strip()
+    with _client_lock:
+        if _client is not None:
+            return _client
 
-    if not endpoint or not access_key or not secret_key:
-        raise RuntimeError("R2 credentials not configured")
+        endpoint = os.getenv("R2_ENDPOINT_URL", "").strip()
+        access_key = os.getenv("R2_ACCESS_KEY_ID", "").strip()
+        secret_key = os.getenv("R2_SECRET_ACCESS_KEY", "").strip()
 
-    _client = boto3.client(
-        "s3",
-        endpoint_url=endpoint,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-    )
+        if not endpoint or not access_key or not secret_key:
+            raise RuntimeError("R2 credentials not configured")
+
+        _client = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+        )
+
     return _client
 
 
