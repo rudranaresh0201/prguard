@@ -720,6 +720,8 @@ def generate_answer_local(query: str, context: str) -> str:
 
         safe_context = re.sub(r"\s+", " ", safe_context).strip()
 
+        # TinyLlama prompt budget: ~1500 tokens total. Context gets 1200 chars (~300 tokens),
+        # leaving room for the question, prompt template, and generated answer.
         safe_context = safe_context[:1200]
 
         RAG_PROMPT = """Answer the question clearly using the context.
