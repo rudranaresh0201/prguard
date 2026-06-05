@@ -8,7 +8,8 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from ..config import get_max_upload_bytes
-from ..db import delete_document, get_all_records
+from ..db import delete_document, get_all_records, get_s3_key_for_document
+from ..storage import delete_pdf_from_r2
 from ..services.ingestion_service import run_ingest_task
 from ..tasks import create_task, get_task_status
 
@@ -78,5 +79,20 @@ def get_task(task_id: str):
 
 @router.delete("/documents/{doc_id}")
 def delete_doc(doc_id: str):
+    # Retrieve s3_key BEFORE deleting chunks (metadata goes with chunks)
+    s3_key = get_s3_key_for_document(doc_id)
+
+    # Delete chunks from ChromaDB
     delete_document(doc_id)
+
+    # Delete raw PDF from R2 (non-fatal if missing or R2 not configured)
+    if s3_key:
+        try:
+            delete_pdf_from_r2(s3_key)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "[DELETE] R2 delete failed for s3_key=%s doc_id=%s: %s", s3_key, doc_id, e
+            )
+
     return {"message": f"Document {doc_id} deleted."}

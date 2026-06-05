@@ -199,6 +199,24 @@ def delete_document(document_id: str) -> None:
     collection.delete(where={"doc_id": document_id})
 
 
+def get_s3_key_for_document(document_id: str) -> str | None:
+    """Return the R2 s3_key for a document before deleting it, or None if not found."""
+    collection = get_collection()
+    try:
+        records = collection.get(
+            where={"doc_id": document_id},
+            include=["metadatas"],
+            limit=1,
+        )
+        metadatas = records.get("metadatas") or []
+        if metadatas and isinstance(metadatas[0], dict):
+            key = metadatas[0].get("s3_key", "")
+            return str(key) if key else None
+    except Exception:
+        pass
+    return None
+
+
 def reset_database() -> None:
     global _collection_verified
     client = get_client()
