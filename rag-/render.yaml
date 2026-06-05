@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: rag-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+
+    disk:
+      name: chroma-data
+      mountPath: /data
+      sizeGB: 1
+
+    envVars:
+      - key: CHROMA_PERSIST_DIR
+        value: /data/chroma
+
+      - key: USE_R2
+        value: "false"
+
+      - key: USE_OPENROUTER
+        value: "true"
+
+      - key: OPENROUTER_MODEL
+        value: mistralai/mistral-7b-instruct
+
+      - key: ALLOWED_ORIGINS
+        value: http://localhost:5173

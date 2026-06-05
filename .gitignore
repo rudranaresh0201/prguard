@@ -1,0 +1,16 @@
+﻿backend/.env
+backend/chroma_db/
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+node_modules/
+frontend/node_modules/
+frontend/dist/
+*.db
+openapi.json
+docs/
+*.sqlite3
+backend/retrieval_audit.jsonl
+backend/task_state.json

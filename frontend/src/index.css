@@ -1,0 +1,80 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-main: #0f172a;
+  --bg-panel: #020617;
+  --text-main: #e2e8f0;
+  --text-muted: #94a3b8;
+  --accent: #4f46e5;
+  --accent-2: #a855f7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg-main);
+  color: var(--text-main);
+}
+
+.glass-card {
+  background: rgba(2, 6, 23, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 38px rgba(2, 6, 23, 0.35);
+  backdrop-filter: blur(16px);
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 999px;
+}
+
+.hero-title {
+  letter-spacing: -0.02em;
+}
+
+.type-caret {
+  display: inline-block;
+  width: 0.6ch;
+  margin-left: 0.08rem;
+  border-right: 2px solid rgba(191, 219, 254, 0.95);
+  animation: blink-caret 0.9s step-end infinite;
+}
+
+@keyframes blink-caret {
+  from,
+  to {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}

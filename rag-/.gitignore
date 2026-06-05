@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+.env/
+.venv/
+.venv-1/
+
+# Vector DB / embeddings
+chroma_db/
+backend/chroma_db/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Large files
+*.zip
+*.pdf
+*.pptx
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Backups / junk
+rag-/
+rag_clean/
+backend_backup_old/
