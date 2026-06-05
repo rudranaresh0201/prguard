@@ -512,6 +512,20 @@ def retrieve_chunks(
             "retrieval_score": None,
             "status": "no_context",
         }
+    # RRF hybrid scoring: combines vector and BM25 ranks without needing score normalization
+    # Sort by each signal to get ranks, then fuse
+    by_vector = sorted(candidates, key=lambda c: c.get("vector_score", 0.0), reverse=True)
+    by_bm25 = sorted(candidates, key=lambda c: c.get("bm25_score", 0.0), reverse=True)
+    vector_rank = {id(c): i for i, c in enumerate(by_vector)}
+    bm25_rank = {id(c): i for i, c in enumerate(by_bm25)}
+    RRF_K = 60  # standard RRF constant
+    for candidate in candidates:
+        cid = id(candidate)
+        vr = vector_rank.get(cid, len(candidates))
+        br = bm25_rank.get(cid, len(candidates))
+        candidate["rrf_score"] = (1.0 / (RRF_K + vr)) + (1.0 / (RRF_K + br))
+    candidates.sort(key=lambda c: c.get("rrf_score", 0.0), reverse=True)
+
     target_count = max(1, int(top_k))
     final_chunks = candidates[: min(target_count, len(candidates))]
     selected_chunks: list[RetrievedChunk] = []
