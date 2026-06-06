@@ -67,7 +67,12 @@ def run_ingest_task(task_id: str, save_path: Path, safe_name: str, actual_size: 
 
         # -------- DELETE STALE ONLY AFTER SUCCESSFUL INGEST --------
         # Safe to delete now — new chunks are confirmed stored under new doc_id
-        collection.delete(where={"file": safe_name, "doc_id": {"$ne": doc_id}})
+        collection.delete(where={
+            "$and": [
+                {"file": {"$eq": safe_name}},
+                {"doc_id": {"$ne": doc_id}},
+            ]
+        })
         logger.info("[INGEST] Deleted stale chunks for filename=%s (kept new doc_id=%s)", safe_name, doc_id)
 
         # -------- BM25 REBUILD --------

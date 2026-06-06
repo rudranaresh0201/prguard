@@ -185,13 +185,12 @@ def query_chunks(
 
 def get_all_records():
     collection = get_collection()
-    
     try:
         data = collection.get()
         return data
     except Exception as e:
-        logger.exception("[DB ERROR] %s", e)
-        return {"metadatas": []}
+        logger.warning("[DB] get_all_records failed (empty or new collection): %s", e)
+        return {"ids": [], "documents": [], "metadatas": []}
 
 
 def delete_document(document_id: str) -> None:
