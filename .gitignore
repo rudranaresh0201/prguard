@@ -14,3 +14,5 @@ docs/
 *.sqlite3
 backend/retrieval_audit.jsonl
 backend/task_state.json
+
+.env
