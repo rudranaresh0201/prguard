@@ -14,6 +14,8 @@ TASK_STATE_PATH = Path(os.getenv("TASK_STATE_PATH", Path(__file__).resolve().par
 _TASK_LOCK = threading.Lock()
 
 
+
+
 def _persist_tasks() -> None:
     TASK_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = TASK_STATE_PATH.with_suffix(".tmp")
