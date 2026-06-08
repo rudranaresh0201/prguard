@@ -16,3 +16,4 @@ backend/retrieval_audit.jsonl
 backend/task_state.json
 
 .env
+audit_logs/*.json

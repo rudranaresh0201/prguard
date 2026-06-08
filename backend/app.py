@@ -64,6 +64,8 @@ app.include_router(core_router)
 app.include_router(query_router)
 app.include_router(documents_router)
 app.include_router(agent_router)
+from backend.api.routes_governance import router as governance_router
+app.include_router(governance_router)
 
 
 if __name__ == "__main__":
