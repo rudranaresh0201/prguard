@@ -85,20 +85,41 @@ export async function uploadPdf(file, onUploadProgress) {
 
 export async function queryApi(query) {
   try {
-    const res = await apiFetch(`${API_BASE}/query`, {
+    const res = await apiFetch(`${API_BASE}/agent/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
     });
-    if (res.status === 429) {
-      throw buildStatusError(429, "Too many requests");
-    }
+    if (res.status === 429) throw buildStatusError(429, "Too many requests");
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`API error: ${res.status} ${text}`);
     }
     const data = await res.json();
-    return data;
+    return {
+      answer: data.answer,
+      status: "ok",
+      guard_fired: false,
+      retrieval_score: null,
+      sources: [
+        ...data.rag_sources.filter(Boolean).map((s, i) => ({
+          id: i + 1,
+          text: `Retrieved from internal document`,
+          document: s,
+          page: 1,
+          type: "doc"
+        })),
+        ...data.web_sources.filter(Boolean).map((s, i) => ({
+          id: data.rag_sources.length + i + 1,
+          text: `Retrieved from web`,
+          document: s,
+          page: 1,
+          type: "web"
+        })),
+      ],
+      route: data.route,
+      steps: data.steps,
+    };
   } catch (error) {
     throw buildApiError(error, "Model is loading, please wait...");
   }
@@ -106,23 +127,41 @@ export async function queryApi(query) {
 
 export async function queryRagByDocument(query, documentId) {
   try {
-    const res = await apiFetch(`${API_BASE}/query`, {
+    const res = await apiFetch(`${API_BASE}/agent/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query,
-        document_id: documentId,
-      }),
+      body: JSON.stringify({ query }),
     });
-    if (res.status === 429) {
-      throw buildStatusError(429, "Too many requests");
-    }
+    if (res.status === 429) throw buildStatusError(429, "Too many requests");
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`API error: ${res.status} ${text}`);
     }
     const data = await res.json();
-    return data;
+    return {
+      answer: data.answer,
+      status: "ok",
+      guard_fired: false,
+      retrieval_score: null,
+      sources: [
+        ...data.rag_sources.filter(Boolean).map((s, i) => ({
+          id: i + 1,
+          text: `Retrieved from internal document`,
+          document: s,
+          page: 1,
+          type: "doc"
+        })),
+        ...data.web_sources.filter(Boolean).map((s, i) => ({
+          id: data.rag_sources.length + i + 1,
+          text: `Retrieved from web`,
+          document: s,
+          page: 1,
+          type: "web"
+        })),
+      ],
+      route: data.route,
+      steps: data.steps,
+    };
   } catch (error) {
     throw buildApiError(error, "Model is loading, please wait...");
   }

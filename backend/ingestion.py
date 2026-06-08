@@ -11,6 +11,7 @@ except ImportError:
     fitz = None
 
 from .db import embed_texts, get_collection
+from .config import RAG_CHUNK_SIZE, RAG_CHUNK_OVERLAP
 from .utils import chunk_text, clean_text
 
 from .core.logging import get_logger
@@ -97,13 +98,17 @@ def ingest_pdf(
 
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
         for page_num, page in enumerate(doc, start=1):
-            page_text = clean_text(page.get_text("text"))
+            raw_page_text = page.get_text("text")
+            # Fix PDF line breaks before chunking
+            page_text = raw_page_text.replace("-\n", "").replace("\n", " ")
+            page_text = " ".join(page_text.split())
+            page_text = clean_text(page_text)
             if not page_text.strip():
                 continue
             page_chunks = chunk_text(
                 text=page_text,
-                chunk_size=380,
-                overlap=60
+                chunk_size=RAG_CHUNK_SIZE,
+                overlap=RAG_CHUNK_OVERLAP
             )
             for chunk in page_chunks:
                 if chunk.strip():
@@ -173,13 +178,17 @@ def ingest_pdf_file_path(
     chunk_pages = []
     with fitz.open(pdf_path) as doc:
         for page_num, page in enumerate(doc, start=1):
-            page_text = clean_text(page.get_text("text"))
+            raw_page_text = page.get_text("text")
+            # Fix PDF line breaks before chunking
+            page_text = raw_page_text.replace("-\n", "").replace("\n", " ")
+            page_text = " ".join(page_text.split())
+            page_text = clean_text(page_text)
             if not page_text.strip():
                 continue
             page_chunks = chunk_text(
                 text=page_text,
-                chunk_size=380,
-                overlap=60
+                chunk_size=RAG_CHUNK_SIZE,
+                overlap=RAG_CHUNK_OVERLAP
             )
             for chunk in page_chunks:
                 if chunk.strip():

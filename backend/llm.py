@@ -36,7 +36,7 @@ def generate_answer_openrouter(query: str, context: str) -> str:
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "You are a helpful assistant. Answer using only the provided context. If the answer is not in the context, say so clearly."},
+                {"role": "system", "content": "You are a precise, comprehensive assistant. Answer using the provided context. Always list ALL relevant items — never truncate. Report everything present and note any gaps."},
                 {"role": "user", "content": f"Context:\n{context[:8000]}\n\nQuestion: {query}"},
             ],
             "temperature": 0.2,
@@ -70,7 +70,7 @@ def generate_answer_openrouter(query: str, context: str) -> str:
         payload = {
             "model": groq_model,
             "messages": [
-                {"role": "system", "content": "You are a helpful assistant. Answer using only the provided context. If the answer is not in the context, say so clearly."},
+                {"role": "system", "content": "You are a precise, comprehensive assistant. Answer using the provided context. Always list ALL relevant items — never truncate. Report everything present and note any gaps."},
                 {"role": "user", "content": f"Context:\n{context[:8000]}\n\nQuestion: {query}"},
             ],
             "temperature": 0.2,

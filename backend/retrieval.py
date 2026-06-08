@@ -13,6 +13,7 @@ from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
 from .core.logging import get_logger
+from .config import RAG_RERANK_WINDOW, RAG_RRF_K, RAG_CHUNK_OVERLAP
 from .db import get_collection, get_embedder
 from .utils import chunk_text as _chunk_text_util
 
@@ -244,7 +245,7 @@ def _build_bm25_corpus(
     bm25_meta: list[dict[str, Any]] = []
     for idx, raw_doc in enumerate(documents):
         metadata = metadatas[idx] if idx < len(metadatas) and isinstance(metadatas[idx], dict) else {}
-        for window_idx, window in enumerate(_chunk_text_util(str(raw_doc or ""), chunk_size=500, overlap=100)):
+        for window_idx, window in enumerate(_chunk_text_util(str(raw_doc or ""), chunk_size=RAG_RERANK_WINDOW, overlap=RAG_CHUNK_OVERLAP)):
             cleaned_window = _normalize_chunk_text(window)
             if len(cleaned_window.split()) < 12:
                 continue
@@ -405,7 +406,7 @@ def retrieve_chunks(
         if isinstance(distance_val, (int, float)):
             semantic_score = max(0.0, 1.0 - (float(distance_val) / 2.0))
 
-        vector_windows = _chunk_text_util(str(raw_chunk or ""), chunk_size=500, overlap=100)
+        vector_windows = _chunk_text_util(str(raw_chunk or ""), chunk_size=RAG_RERANK_WINDOW, overlap=RAG_CHUNK_OVERLAP)
         for window_idx, window in enumerate(vector_windows):
             _register_candidate(
                 text=window,
@@ -505,7 +506,7 @@ def retrieve_chunks(
     by_bm25 = sorted(candidates, key=lambda c: c.get("bm25_score", 0.0), reverse=True)
     vector_rank = {id(c): i for i, c in enumerate(by_vector)}
     bm25_rank = {id(c): i for i, c in enumerate(by_bm25)}
-    RRF_K = 60  # standard RRF constant
+    RRF_K = RAG_RRF_K
     for candidate in candidates:
         cid = id(candidate)
         vr = vector_rank.get(cid, len(candidates))

@@ -19,6 +19,7 @@ from .services.rebuild_service import rebuild_from_r2_if_empty
 from .api.routes_core import router as core_router
 from .api.routes_query import router as query_router
 from .api.routes_documents import router as documents_router
+from backend.api.routes_agent import router as agent_router
 from .tasks import load_task_state_on_startup
 
 app = FastAPI(title="PDF RAG Backend", version="2.0.0")
@@ -62,6 +63,7 @@ def startup_warmup() -> None:
 app.include_router(core_router)
 app.include_router(query_router)
 app.include_router(documents_router)
+app.include_router(agent_router)
 
 
 if __name__ == "__main__":
