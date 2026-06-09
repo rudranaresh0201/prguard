@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: governance-agent
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+      - key: INTERNAL_API_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.1-8b-instant
+      - key: AUDIT_LOG_DIR
+        value: /tmp/audit_logs
+    disk:
+      name: audit-logs
+      mountPath: /data
+      sizeGB: 1
