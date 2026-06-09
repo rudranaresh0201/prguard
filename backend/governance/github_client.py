@@ -160,6 +160,8 @@ def build_security_annotations(diff: str) -> list:
          "warning", "Dangerous built-in: eval/exec"),
         (r'subprocess\.(call|run|Popen).*shell\s*=\s*True',
          "failure", "Shell injection risk"),
+        (r'FROM\s+\w[^:]+:latest', "warning", "Unpinned :latest Docker tag"),
+        (r'FROM\s+\w[^:@\s]+\s*$', "warning", "Unpinned Docker base image — no tag specified"),
     ]
 
     annotations = []

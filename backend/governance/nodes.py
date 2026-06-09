@@ -243,11 +243,20 @@ Review for ALL of these regardless of language:
 8. Insecure configurations (debug mode, weak TLS, open CORS)
 9. Duplicate functionality already in codebase
 10. Architecture violations based on existing patterns
+11. Missing authorization checks on sensitive operations
+    (delete, update, admin actions) with no role/permission validation
 
-For Solidity: check reentrancy, integer overflow, tx.origin
-For Dockerfile: check root user, latest tags, secrets in ENV
+For Solidity: check reentrancy (state changes AFTER external
+calls — balances should update BEFORE .call()), tx.origin auth
+bypass, integer overflow in pre-0.8.0 contracts (no SafeMath),
+unchecked return values from .call()
+For Dockerfile: check root user (USER root), secrets in ENV,
+unpinned base images (:latest tag or no tag — always pin to
+specific version like ubuntu:22.04), debug mode enabled
 For YAML/configs: check plaintext secrets, insecure defaults
-For Bash: check unquoted variables, unsafe pipes
+For Bash: check unquoted variables ($1 $2 $3 without quotes),
+SQL queries containing $1/$2/$3 shell args (injection via
+numbered args), eval with any variable, unsafe pipes
 
 Respond in exactly this format:
 VERDICT: pass|fail
