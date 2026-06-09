@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, List, TypedDict
 
 from rank_bm25 import BM25Okapi
-from sentence_transformers import SentenceTransformer
+from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
 from .core.logging import get_logger
 from .config import RAG_RERANK_WINDOW, RAG_RRF_K, RAG_CHUNK_OVERLAP
@@ -177,7 +177,7 @@ def _is_near_duplicate(text_a: str, text_b: str, threshold: float = 0.85) -> boo
     return similarity >= threshold
 
 
-def _get_embed_model() -> SentenceTransformer:
+def _get_embed_model() -> ONNXMiniLM_L6_V2:
     # Reuse the single global embedder managed by db.py.
     return get_embedder()
 
@@ -324,11 +324,7 @@ def retrieve_chunks(
     query_tokens = _keyword_query_tokens(query)
     embed_model = _get_embed_model()
     BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
-    query_embedding = embed_model.encode(
-        BGE_QUERY_PREFIX + query,
-        show_progress_bar=False,
-        normalize_embeddings=True,
-    ).tolist()
+    query_embedding = embed_model([BGE_QUERY_PREFIX + query])[0]
 
     vector_k = min(max(5, int(top_k)), total_chunks)
     where = {"doc_id": document_id} if document_id else None
