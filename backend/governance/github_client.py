@@ -5,18 +5,16 @@ from backend.config import GROQ_MODEL
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = os.getenv("GITHUB_REPO")
 
-def get_github_client():
-    if not GITHUB_TOKEN:
-        raise ValueError("GITHUB_TOKEN not set")
-    return Github(GITHUB_TOKEN)
+def get_github_client(token: str = None):
+    return Github(token or GITHUB_TOKEN)
 
-def get_repo():
-    g = get_github_client()
-    return g.get_repo(GITHUB_REPO)
+def get_repo(token: str = None, repo_name: str = None):
+    client = get_github_client(token)
+    return client.get_repo(repo_name or GITHUB_REPO)
 
-def fetch_pr_diff(pr_number: int) -> str:
+def fetch_pr_diff(pr_number: int, token: str = None, repo_name: str = None) -> str:
     """Fetch PR diff using PyGitHub pr.get_files(), capped at 100k characters."""
-    repo = get_repo()
+    repo = get_repo(token, repo_name)
     pr = repo.get_pull(pr_number)
 
     parts = []
@@ -35,18 +33,18 @@ def fetch_pr_diff(pr_number: int) -> str:
 
     return "\n".join(parts)
 
-def post_pr_comment(pr_number: int, body: str) -> dict:
+def post_pr_comment(pr_number: int, body: str, token: str = None, repo_name: str = None) -> dict:
     """Post a comment on a PR."""
-    repo = get_repo()
+    repo = get_repo(token, repo_name)
     pr = repo.get_pull(pr_number)
     comment = pr.create_issue_comment(body)
     return {"comment_id": comment.id, "url": comment.html_url}
 
 GOVERNANCE_MARKER = "<!-- governance-bot -->"
 
-def upsert_pr_comment(pr_number: int, body: str) -> None:
+def upsert_pr_comment(pr_number: int, body: str, token: str = None, repo_name: str = None) -> None:
     """Post a new governance comment or edit the existing one."""
-    repo = get_repo()
+    repo = get_repo(token, repo_name)
     issue = repo.get_issue(pr_number)
     full_body = GOVERNANCE_MARKER + "\n" + body
     for comment in issue.get_comments():
@@ -63,9 +61,9 @@ def post_review_comment(pr_number: int, body: str, commit_sha: str, path: str, l
     comment = pr.create_review_comment(body=body, commit=commit, path=path, line=line)
     return {"comment_id": comment.id, "url": comment.html_url}
 
-def add_pr_label(pr_number: int, label: str) -> None:
+def add_pr_label(pr_number: int, label: str, token: str = None, repo_name: str = None) -> None:
     """Add a label to a PR."""
-    repo = get_repo()
+    repo = get_repo(token, repo_name)
     pr = repo.get_pull(pr_number)
     pr.add_to_labels(label)
 
@@ -75,10 +73,10 @@ def add_pr_label(pr_number: int, label: str) -> None:
 # Repository → Checks → Read and write access.
 # Classic PATs do NOT have access to the Checks API.
 
-def create_check_run(name: str, head_sha: str) -> int:
+def create_check_run(name: str, head_sha: str, token: str = None, repo_name: str = None) -> int:
     """Create a check run in 'in_progress' state. Returns the check run ID."""
     from datetime import datetime, timezone
-    repo = get_repo()
+    repo = get_repo(token, repo_name)
     check_run = repo.create_check_run(
         name=name,
         head_sha=head_sha,
@@ -94,6 +92,8 @@ def complete_check_run(
     title: str,
     summary: str,
     annotations: list = None,
+    token: str = None,
+    repo_name: str = None,
 ) -> None:
     """Update a check run to 'completed'.
 
@@ -102,7 +102,7 @@ def complete_check_run(
                  GitHub caps annotations at 50 per update call.
     """
     from datetime import datetime, timezone
-    repo = get_repo()
+    repo = get_repo(token, repo_name)
     check_run = repo.get_check_run(check_run_id)
     output = {"title": title, "summary": summary}
     if annotations:
@@ -179,9 +179,9 @@ def merge_pr(pr_number: int, commit_message: str = "Merged by Governance Agent")
     result = pr.merge(commit_message=commit_message)
     return {"merged": result.merged, "sha": result.sha, "message": result.message}
 
-def get_pr_details(pr_number: int) -> dict:
+def get_pr_details(pr_number: int, token: str = None, repo_name: str = None) -> dict:
     """Get full PR details."""
-    repo = get_repo()
+    repo = get_repo(token, repo_name)
     pr = repo.get_pull(pr_number)
     return {
         "number": pr.number,

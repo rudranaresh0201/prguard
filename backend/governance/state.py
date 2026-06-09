@@ -60,3 +60,6 @@ class PRState(TypedDict):
     docs_passed: bool
     docs_missing: str
     docs_suggestions: str
+
+    # Auth
+    github_token: str

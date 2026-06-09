@@ -11,6 +11,7 @@ from pydantic import BaseModel, validator
 from backend.governance.graph import run_pipeline_with_recovery
 from backend.governance.state import PRState
 from backend.governance.github_client import get_pr_details, fetch_pr_diff, create_check_run
+from backend.governance.github_app_auth import get_installation_token
 from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -37,9 +38,20 @@ def verify_webhook_signature(payload: bytes, signature: str) -> bool:
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
 
-async def run_governance_pipeline(pr_number: int, repo: str, diff: str):
+async def run_governance_pipeline(
+    pr_number: int,
+    repo: str,
+    diff: str,
+    installation_id: int = None,
+):
     try:
-        details = get_pr_details(pr_number)
+        if installation_id:
+            from backend.governance.github_app_auth import get_installation_token
+            token = get_installation_token(installation_id)
+        else:
+            token = os.getenv("GITHUB_TOKEN")
+
+        details = get_pr_details(pr_number, token=token)
 
         # Create all governance check runs upfront so they show as in_progress together.
         # Silently skips if GITHUB_TOKEN lacks checks:write (labels/comments still work).
@@ -92,6 +104,7 @@ async def run_governance_pipeline(pr_number: int, repo: str, diff: str):
             "docs_passed": False,
             "docs_missing": "",
             "docs_suggestions": "",
+            "github_token": token or "",
         }
 
         result = await run_pipeline_with_recovery(pr_number, repo, initial_state)
@@ -142,19 +155,38 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
 
     payload = json.loads(payload_bytes)
     event = request.headers.get("X-GitHub-Event", "")
+    installation_id = payload.get("installation", {}).get("id")
+
+    if event == "installation":
+        action = payload.get("action")
+        repos = payload.get("repositories", [])
+        logger.info(
+            "[Governance] App %s installation_id=%s repos=%s",
+            action, installation_id, [r["full_name"] for r in repos]
+        )
+        return {"status": "ok", "action": action}
 
     if event == "pull_request":
         action = payload.get("action", "")
         if action in ["opened", "synchronize", "reopened"]:
             pr_number = payload["pull_request"]["number"]
             repo = payload["repository"]["full_name"]
+            if installation_id:
+                try:
+                    webhook_token = get_installation_token(installation_id)
+                except Exception:
+                    webhook_token = os.getenv("GITHUB_TOKEN")
+            else:
+                webhook_token = os.getenv("GITHUB_TOKEN")
             try:
-                diff = fetch_pr_diff(pr_number)
+                diff = fetch_pr_diff(pr_number, token=webhook_token, repo_name=repo)
             except Exception:
                 logger.exception("[Governance] Failed to fetch diff for PR #%s", pr_number)
                 diff = "[DIFF FETCH FAILED]"
             logger.info("[Governance] PR #%s %s — starting pipeline", pr_number, action)
-            background_tasks.add_task(run_governance_pipeline, pr_number, repo, diff)
+            background_tasks.add_task(
+                run_governance_pipeline, pr_number, repo, diff, installation_id
+            )
             return {"status": "accepted", "pr": pr_number, "action": action}
 
     return {"status": "ignored", "event": event}
