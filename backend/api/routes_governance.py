@@ -8,7 +8,7 @@ import json
 from typing import Optional
 from pydantic import BaseModel, validator
 
-from backend.governance.graph import run_pipeline_with_recovery
+from backend.governance.graph import run_pipeline_with_recovery, apply_governance_fixes
 from backend.governance.state import PRState
 from backend.governance.github_client import get_pr_details, fetch_pr_diff, create_check_run
 from backend.governance.github_app_auth import get_installation_token
@@ -101,6 +101,8 @@ async def run_governance_pipeline(
             "security_issues": "",
             "security_severity": "",
             "security_details": "",
+            "security_fixes": [],
+            "security_fix_suggestions": [],
             "docs_passed": False,
             "docs_missing": "",
             "docs_suggestions": "",
@@ -165,6 +167,29 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
             action, installation_id, [r["full_name"] for r in repos]
         )
         return {"status": "ok", "action": action}
+
+    if event == "issue_comment":
+        comment_body = payload.get("comment", {}).get("body", "").strip()
+        if comment_body == "/governance fix":
+            pr_number = payload["issue"]["number"]
+            repo = payload["repository"]["full_name"]
+            installation_id = payload.get("installation", {}).get("id")
+
+            if installation_id:
+                try:
+                    fix_token = get_installation_token(installation_id)
+                except Exception:
+                    fix_token = os.getenv("GITHUB_TOKEN")
+            else:
+                fix_token = os.getenv("GITHUB_TOKEN")
+
+            logger.info(
+                "[Governance] /governance fix requested for PR #%s", pr_number
+            )
+            background_tasks.add_task(
+                apply_governance_fixes, pr_number, repo, fix_token
+            )
+            return {"status": "fix_triggered", "pr": pr_number}
 
     if event == "pull_request":
         action = payload.get("action", "")

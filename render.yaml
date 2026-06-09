@@ -1,3 +1,7 @@
+# GitHub App webhook event subscriptions (set in GitHub App settings, not here):
+#   - pull_request  (opened, synchronize, reopened)
+#   - issue_comment (created) — required for /governance fix command
+
 services:
   - type: web
     name: governance-agent

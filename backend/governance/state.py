@@ -55,6 +55,7 @@ class PRState(TypedDict):
     security_severity: str
     security_details: str
     security_fixes: list[str]
+    security_fix_suggestions: list
 
     # Docs outputs (top-level, populated on both success and LLM error)
     docs_passed: bool

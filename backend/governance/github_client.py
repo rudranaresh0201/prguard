@@ -194,6 +194,43 @@ def build_security_annotations(diff: str) -> list:
     return annotations[:50]
 
 
+def get_file_content(filepath: str, branch: str, token: str = None, repo_name: str = None) -> dict:
+    """Fetch a file's decoded content and blob SHA from a branch."""
+    import base64
+    repo = get_repo(token, repo_name)
+    try:
+        file_obj = repo.get_contents(filepath, ref=branch)
+        content = base64.b64decode(file_obj.content).decode("utf-8")
+        return {"content": content, "sha": file_obj.sha}
+    except Exception as e:
+        return {"error": str(e), "content": "", "sha": ""}
+
+
+def push_file_fix(
+    filepath: str,
+    new_content: str,
+    branch: str,
+    commit_message: str,
+    file_sha: str,
+    token: str = None,
+    repo_name: str = None,
+) -> dict:
+    """Update a file on a branch via the GitHub Contents API."""
+    import base64
+    repo = get_repo(token, repo_name)
+    try:
+        result = repo.update_file(
+            path=filepath,
+            message=commit_message,
+            content=new_content,
+            sha=file_sha,
+            branch=branch,
+        )
+        return {"success": True, "sha": result["commit"].sha}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def merge_pr(pr_number: int, commit_message: str = "Merged by Governance Agent", token: str = None, repo_name: str = None) -> dict:
     """Merge a PR."""
     repo = get_repo(token, repo_name)

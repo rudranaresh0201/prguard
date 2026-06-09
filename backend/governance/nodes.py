@@ -316,10 +316,57 @@ FIX_5: corrected code for issue 5"""
             "No security issues detected.",
         )
 
+    # Generate structured file-level fix suggestions for each affected file
+    fix_suggestions = []
+    if verdict == "fail" and state.get("diff"):
+        files_in_diff = []
+        for line in state["diff"].split("\n"):
+            if line.startswith("+++ b/"):
+                path = line.replace("+++ b/", "").strip()
+                if path and path != "/dev/null":
+                    files_in_diff.append(path)
+
+        for filepath in files_in_diff[:3]:
+            fix_prompt = f"""You are a senior security engineer.
+
+File: {filepath}
+
+Security issues found in this file:
+{issues}
+
+Here is the diff showing the new code added:
+{state['diff'][:2000]}
+
+Generate the corrected version of ONLY the changed functions/blocks.
+Show ONLY what needs to change, in this exact format:
+
+FILE: {filepath}
+FIND:
+<exact current code that needs replacing>
+REPLACE_WITH:
+<corrected code>
+END
+
+Rules:
+- Fix every security issue listed
+- Keep all existing logic intact
+- One FIND/REPLACE_WITH block per issue
+- Be precise — FIND must match exactly"""
+
+            try:
+                fix_response = llm.invoke(fix_prompt).content.strip()
+                fix_suggestions.append({
+                    "file": filepath,
+                    "suggestion": fix_response,
+                })
+            except Exception:
+                pass
+
     return {
         **state,
         "security_result": {"verdict": verdict, "issues": issues, "severity": severity},
         "security_fixes": fixes,
+        "security_fix_suggestions": fix_suggestions,
         "blocking_issues": state["blocking_issues"] + ([f"Security: {issues}"] if blocking else []),
         "agent_steps": state["agent_steps"] + [f"🔒 Security → {verdict.upper()}"],
         "audit_log": state["audit_log"] + [audit_entry],
@@ -434,6 +481,14 @@ Requesting human approval via Slack..."""
 {chr(10).join(f'- {issue}' for issue in blocking)}
 
 Fix all blocking issues and push a new commit to re-trigger review."""
+        fix_suggestions = state.get("security_fix_suggestions", [])
+        if fix_suggestions:
+            suggestions_text = "\n\n".join([
+                f"**`{s['file']}`**\n```\n{s['suggestion']}\n```"
+                for s in fix_suggestions
+            ])
+            comment += f"\n\n---\n## 🔧 Suggested Fixes\n\n{suggestions_text}"
+            comment += "\n\n---\n**To apply these fixes automatically, comment `/governance fix` on this PR.**"
         add_pr_label(state["pr_number"], "gates:failed", token=state.get("github_token"), repo_name=state.get("repo"))
 
     upsert_pr_comment(state["pr_number"], comment, token=state.get("github_token"), repo_name=state.get("repo"))
