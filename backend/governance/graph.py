@@ -13,6 +13,7 @@ from backend.governance.nodes import (
     context_retrieval_node,
     security_node,
     docs_node,
+    bug_detection_node,
     gate_aggregator_node,
     merge_node,
     no_merge_node,
@@ -28,17 +29,19 @@ def build_governance_graph():
     graph.add_node("triage",            triage_node)
     graph.add_node("context_retrieval", context_retrieval_node)
     graph.add_node("security",          security_node)
-    graph.add_node("docs",            docs_node)
-    graph.add_node("gate_aggregator", gate_aggregator_node)
-    graph.add_node("merge",           merge_node)
-    graph.add_node("no_merge",        no_merge_node)
-    graph.add_node("audit",           audit_node)
+    graph.add_node("docs",              docs_node)
+    graph.add_node("bug_detection",     bug_detection_node)
+    graph.add_node("gate_aggregator",   gate_aggregator_node)
+    graph.add_node("merge",             merge_node)
+    graph.add_node("no_merge",          no_merge_node)
+    graph.add_node("audit",             audit_node)
 
     graph.set_entry_point("triage")
     graph.add_edge("triage",            "context_retrieval")
     graph.add_edge("context_retrieval", "security")
-    graph.add_edge("security",  "docs")
-    graph.add_edge("docs",      "gate_aggregator")
+    graph.add_edge("security",          "docs")
+    graph.add_edge("docs",              "bug_detection")
+    graph.add_edge("bug_detection",     "gate_aggregator")
 
     graph.add_conditional_edges(
         "gate_aggregator",

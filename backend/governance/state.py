@@ -62,5 +62,11 @@ class PRState(TypedDict):
     docs_missing: str
     docs_suggestions: str
 
+    # Bug detection outputs
+    bugs_found: str
+    bugs_severity: str
+    bugs_passed: bool
+    bug_fix_suggestions: list
+
     # Auth
     github_token: str

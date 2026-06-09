@@ -58,7 +58,7 @@ async def run_governance_pipeline(
         check_run_ids: dict = {}
         head_sha = details.get("head_sha", "")
         if head_sha:
-            for check_name in ("governance/triage", "governance/security", "governance/docs"):
+            for check_name in ("governance/triage", "governance/security", "governance/docs", "governance/bugs"):
                 try:
                     check_run_ids[check_name] = create_check_run(check_name, head_sha, token=token, repo_name=repo)
                 except Exception:
@@ -106,6 +106,10 @@ async def run_governance_pipeline(
             "docs_passed": False,
             "docs_missing": "",
             "docs_suggestions": "",
+            "bugs_found": "",
+            "bugs_severity": "",
+            "bugs_passed": False,
+            "bug_fix_suggestions": [],
             "github_token": token or "",
         }
 

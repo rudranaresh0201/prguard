@@ -458,7 +458,146 @@ SUGGESTIONS: one concrete improvement suggestion"""
     }
 
 
-# ── 4. Gate Aggregator Node ─────────────────────────────────
+# ── 4. Bug Detection Node ───────────────────────────────────
+def bug_detection_node(state: PRState) -> PRState:
+    diff = state["diff"]
+
+    code_context_str = ""
+    if state.get("code_context"):
+        code_context_str = "\n\nExisting similar code for context:\n"
+        for c in state["code_context"][:3]:
+            code_context_str += f"\n--- {c['file']} ({c['function']}) ---\n{c['text'][:300]}\n"
+
+    safe_title = sanitize_for_prompt(state["title"], 300)
+
+    prompt = f"""You are a senior software engineer reviewing a Pull Request for bugs and code quality issues.
+This PR may contain any programming language.
+
+PR Title: {safe_title}
+
+{DIFF_OPEN}
+{diff[:3000]}
+{DIFF_CLOSE}
+
+{code_context_str}
+
+Find ALL of these regardless of language:
+1. Null/undefined/None reference errors
+2. Off-by-one errors in loops or array access
+3. Unhandled exceptions or missing error handling
+4. Infinite loops or missing exit conditions
+5. Wrong return values or missing return statements
+6. Type mismatches or incorrect type assumptions
+7. Race conditions or concurrency issues
+8. Memory leaks or resource not closed
+9. Division by zero or numeric overflow
+10. Edge cases not handled (empty input, negative numbers, empty array)
+11. Incorrect algorithm logic
+12. Dead code or unreachable code
+
+Be specific — reference exact function names and line content.
+Only flag real bugs, not style preferences.
+
+Respond in exactly this format:
+VERDICT: pass|fail
+BUGS: comma-separated list of specific bugs found, or 'none'
+SEVERITY: low|medium|high|critical
+DETAILS: one sentence explaining the most critical bug
+FIX_1: corrected code for bug 1
+FIX_2: corrected code for bug 2
+FIX_3: corrected code for bug 3"""
+
+    try:
+        result = llm.invoke(prompt).content.strip()
+    except Exception as e:
+        return {
+            **state,
+            "bugs_passed": False,
+            "bugs_found": f"llm_error: {type(e).__name__}",
+            "bugs_severity": "unknown",
+            "bug_fix_suggestions": [],
+            "blocking_issues": state["blocking_issues"] + [f"Bug detection: llm_error ({type(e).__name__})"],
+            "errors": state["errors"] + [f"bug_llm_error: {e}"],
+            "agent_steps": state["agent_steps"] + ["Bug detection → llm_error"],
+        }
+
+    lines = {l.split(":")[0].strip(): ":".join(l.split(":")[1:]).strip()
+             for l in result.split("\n") if ":" in l}
+
+    verdict = lines.get("VERDICT", "pass").lower()
+    bugs = lines.get("BUGS", "none")
+    severity = lines.get("SEVERITY", "low")
+    details = lines.get("DETAILS", "")
+
+    fixes = []
+    for i in range(1, 4):
+        fix = lines.get(f"FIX_{i}", "").strip()
+        if fix:
+            fixes.append(fix)
+
+    bug_suggestions = []
+    if verdict == "fail" and state.get("diff"):
+        files_in_diff = []
+        for line in state["diff"].split("\n"):
+            if line.startswith("+++ b/"):
+                path = line.replace("+++ b/", "").strip()
+                if path and path != "/dev/null":
+                    files_in_diff.append(path)
+
+        for filepath in files_in_diff[:2]:
+            fix_prompt = f"""You are a senior engineer.
+
+File: {filepath}
+Bugs found: {bugs}
+
+Diff:
+{diff[:2000]}
+
+Generate corrected code in this exact format:
+
+FILE: {filepath}
+FIND:
+<exact current buggy code>
+REPLACE_WITH:
+<corrected code>
+END
+
+Fix every bug listed. Be precise — FIND must match exactly."""
+
+            try:
+                fix_response = llm.invoke(fix_prompt).content.strip()
+                bug_suggestions.append({
+                    "file": filepath,
+                    "suggestion": fix_response,
+                })
+            except Exception:
+                pass
+
+    blocking = verdict == "fail" and severity in ["high", "critical"]
+
+    _finish_check(
+        state, "governance/bugs",
+        "failure" if verdict == "fail" else "success",
+        f"Bug Detection: {'FAILED' if verdict == 'fail' else 'PASSED'} (severity: {severity.upper()})",
+        f"**Bugs found:**\n{bugs}\n\n**Details:** {details}",
+    )
+
+    audit_entry = log_step(state, "bug_detection_node", "bug_review",
+                           f"verdict={verdict} severity={severity}")
+
+    return {
+        **state,
+        "bugs_passed": verdict == "pass",
+        "bugs_found": bugs,
+        "bugs_severity": severity,
+        "bug_fix_suggestions": bug_suggestions,
+        "blocking_issues": state["blocking_issues"] + ([f"Bugs: {bugs}"] if blocking else []),
+        "agent_steps": state["agent_steps"] + [f"🐛 Bugs → {verdict.upper()}"],
+        "audit_log": state["audit_log"] + [audit_entry],
+    }
+
+
+# ── 5. Gate Aggregator Node ─────────────────────────────────
 def gate_aggregator_node(state: PRState) -> PRState:
     blocking = list(state["blocking_issues"])
 
@@ -489,6 +628,13 @@ Fix all blocking issues and push a new commit to re-trigger review."""
             ])
             comment += f"\n\n---\n## 🔧 Suggested Fixes\n\n{suggestions_text}"
             comment += "\n\n---\n**To apply these fixes automatically, comment `/governance fix` on this PR.**"
+        bug_suggestions = state.get("bug_fix_suggestions", [])
+        if bug_suggestions:
+            bug_text = "\n\n".join([
+                f"**`{s['file']}`**\n```\n{s['suggestion']}\n```"
+                for s in bug_suggestions
+            ])
+            comment += f"\n\n---\n## 🐛 Bug Fixes\n\n{bug_text}"
         add_pr_label(state["pr_number"], "gates:failed", token=state.get("github_token"), repo_name=state.get("repo"))
 
     upsert_pr_comment(state["pr_number"], comment, token=state.get("github_token"), repo_name=state.get("repo"))
