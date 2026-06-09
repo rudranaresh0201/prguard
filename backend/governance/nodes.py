@@ -243,16 +243,32 @@ Review for ALL of these regardless of language:
 8. Insecure configurations (debug mode, weak TLS, open CORS)
 9. Duplicate functionality already in codebase
 10. Architecture violations based on existing patterns
-11. Missing authorization checks on sensitive operations
-    (delete, update, admin actions) with no role/permission validation
+11. Missing authorization/authentication checks on
+    sensitive operations — look for delete, update, drop,
+    remove, admin functions that have NO check for user
+    role, permissions, session, or identity before executing.
+    Example: a delete_user() function with no
+    @login_required, no role check, no token validation
+    is an authorization vulnerability.
 
-For Solidity: check reentrancy (state changes AFTER external
-calls — balances should update BEFORE .call()), tx.origin auth
-bypass, integer overflow in pre-0.8.0 contracts (no SafeMath),
-unchecked return values from .call()
-For Dockerfile: check root user (USER root), secrets in ENV,
-unpinned base images (:latest tag or no tag — always pin to
-specific version like ubuntu:22.04), debug mode enabled
+For Solidity:
+- Reentrancy: flag ANY function that makes an external
+  call (.call(), .transfer(), .send()) BEFORE updating
+  state variables. The pattern: require() → external call
+  → state update is WRONG. Correct pattern is: require()
+  → state update → external call (checks-effects-interactions).
+- tx.origin: flag require(tx.origin == owner) — use msg.sender
+- Integer overflow: in pragma solidity ^0.7.0 or lower,
+  ALL arithmetic (+= -= *=) can overflow without SafeMath
+- Unchecked .call() return values
+For Dockerfile:
+- USER root: flag USER root or missing USER directive
+- Secrets in ENV: flag ENV with PASSWORD/SECRET/KEY/TOKEN
+- Unpinned images: flag FROM image:latest OR FROM image
+  with no tag at all. Always requires a pinned version
+  like ubuntu:22.04. This is a supply chain vulnerability.
+- Debug mode: flag ENV DEBUG=true or DEBUG=1
+- EXPOSE with sensitive ports
 For YAML/configs: check plaintext secrets, insecure defaults
 For Bash: check unquoted variables ($1 $2 $3 without quotes),
 SQL queries containing $1/$2/$3 shell args (injection via
