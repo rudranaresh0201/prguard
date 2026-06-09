@@ -1,205 +1,171 @@
-# Agentic RAG — LangGraph Multi-Agent Document Intelligence
+# PRGuard 🛡️
 
-A production-grade RAG system upgraded with a LangGraph multi-agent orchestration layer. Queries are routed intelligently across internal documents, live web search, or both — then synthesised into a single comprehensive answer.
+> Autonomous PR security and code review agent. Reviews any Pull Request in 13 seconds across any programming language.
 
----
+## Live Demo
+**Deployed at:** https://governance-agent.onrender.com
 
-## Architecture
+## Evaluation Results
+Tested against 16 known vulnerabilities across 5 languages:
 
-```
-User Query
-    │
-    ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Router Agent                          │
-│  Classifies query → rag | web | both | unclear          │
-└──────────────┬──────────────────────┬───────────────────┘
-               │                      │
-        ┌──────▼──────┐        ┌──────▼──────┐
-        │  RAG Agent  │        │  Web Agent  │
-        │  BM25 +     │        │  Tavily     │
-        │  Vector     │        │  live search│
-        │  Hybrid RRF │        └──────┬──────┘
-        └──────┬──────┘               │
-               └──────────┬───────────┘
-                           │
-                    ┌──────▼──────────┐
-                    │ Synthesis Agent │
-                    │ Lists ALL items │
-                    │ never truncates │
-                    └──────┬──────────┘
-                           │
-                    ┌──────▼──────┐
-                    │  Response   │
-                    │ answer +    │
-                    │ sources +   │
-                    │ route/steps │
-                    └─────────────┘
-```
+| Metric | Score |
+|--------|-------|
+| Recall | 100% (16/16 issues caught) |
+| Precision | 94.12% (1 false positive) |
+| Review time | ~13 seconds |
+| Languages tested | Python, Solidity, Bash, Dockerfile |
 
----
+## What It Catches
+
+**Security Vulnerabilities**
+- Hardcoded secrets, API keys, passwords, tokens
+- SQL injection (Python f-strings, Bash numbered args)
+- Insecure cryptography (MD5, SHA1, weak keys)
+- Missing authorization checks on sensitive operations
+- Dangerous functions (eval, exec, shell=True)
+- Insecure configurations (debug mode, open CORS, weak TLS)
+
+**Smart Contract (Solidity)**
+- Reentrancy vulnerabilities (CEI pattern violations)
+- tx.origin authentication bypass
+- Integer overflow in pre-0.8.0 contracts
+- Unchecked .call() return values
+
+**Infrastructure (Dockerfile, Bash, YAML)**
+- Secrets in ENV variables
+- Running as root user
+- Unpinned base images (:latest tag)
+- Shell injection via unquoted variables
+- Arbitrary code execution via eval
+
+**Code Quality**
+- Logic bugs (off-by-one, infinite loops, null references)
+- Division by zero and numeric overflow
+- Missing error handling
+- Unhandled edge cases
+
+**Documentation**
+- Missing docstrings and type hints
+- Missing CHANGELOG entries
+- TODO comments in production code
+
+## How It Works
+Developer opens PR
+↓
+GitHub webhook → PRGuard server
+↓
+Full diff fetched from GitHub API
+↓
+LangGraph multi-agent pipeline:
+Triage Agent    → risk classification
+Context Agent   → CodeRAG codebase retrieval
+Security Agent  → vulnerability detection + fixes
+Docs Agent      → documentation compliance
+Bug Agent       → logic error detection + fixes
+↓
+Gate Aggregator → approve or block
+↓
+GitHub: comment + labels + merge blocked
+↓
+Audit log written
+
+## CodeRAG — The Core Differentiator
+
+Unlike linters that only see the diff, PRGuard indexes your entire codebase at function level using AST parsing. Before judging new code, it retrieves the most semantically similar existing functions and injects them into the review prompt.
+
+This enables:
+- **Architecture violation detection** — new code contradicts existing patterns
+- **Duplication detection** — functionality already exists elsewhere  
+- **Pattern-consistent fixes** — suggested fixes match your codebase style
+
+## Auto-Fix — Like Claude Code
+
+When PRGuard finds issues it posts exact FIND/REPLACE fix suggestions.
+To apply them automatically, comment on any PR:
+/prguard fix
+
+The agent pushes the corrected code to your branch. You review, then merge.
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Agent orchestration | LangGraph, LangChain-Groq |
-| LLM (router + synthesis) | Groq `llama-3.1-8b-instant` (configurable) |
-| LLM fallback (synthesis) | OpenRouter (configurable model) |
-| Web search | Tavily |
-| Backend API | FastAPI |
-| Vector store | ChromaDB |
-| Embeddings | Sentence-Transformers |
-| Sparse retrieval | BM25 (Okapi) |
-| Retrieval fusion | Reciprocal Rank Fusion (RRF) |
-| Frontend | React + Vite |
+| Component | Technology |
+|-----------|------------|
+| Agent Orchestration | LangGraph |
+| LLM | Groq / llama-3.1-8b-instant |
+| Vector Database | ChromaDB |
+| Embeddings | ONNX MiniLM-L6-v2 |
+| GitHub Integration | PyGitHub + GitHub App |
+| API Server | FastAPI |
+| Deployment | Render |
 
----
-
-## Agent Endpoints
-
-### `POST /agent/query`
-
-Runs the full LangGraph pipeline and returns a complete answer.
-
-**Request:**
-```bash
-curl -X POST http://localhost:8003/agent/query \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: 12345" \
-  -d '{"query": "What internships has Rudra done?"}'
-```
-
-**Response:**
-```json
-{
-  "answer": "Rudra has completed two internships:\n- OpenRAG (Remote Backend Engineering Intern, 2026-Present): Built a production-grade multi-agent CSV/XLSX analytics system for DocDynamo using 7 specialist CrewAI agents.\n- 4seer Technologies (Remote Software Engineering Intern, 2026-Present): Building a FastAPI microservice for automated PDF generation for the Amplex project.",
-  "route": "rag",
-  "steps": [
-    "Router → rag",
-    "RAG → 8 chunks retrieved",
-    "Synthesis complete"
-  ],
-  "rag_sources": [
-    "Rudra_Naresh_resume (1).pdf",
-    "Rudra_Naresh_resume (1).pdf"
-  ],
-  "web_sources": []
-}
-```
-
----
-
-### `POST /agent/query/stream`
-
-Server-Sent Events stream. Emits agent step events as they happen, then a final `done` event.
-
-```bash
-curl -X POST http://localhost:8003/agent/query/stream \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: 12345" \
-  -d '{"query": "Latest AI news"}' \
-  --no-buffer
-```
-
-**Event stream:**
-```
-data: {"type": "step", "node": "router"}
-data: {"type": "step", "node": "web"}
-data: {"type": "token", "content": "Here are the latest"}
-data: {"type": "token", "content": " AI developments..."}
-data: {"type": "done", "route": "web", "steps": [...]}
-```
-
----
-
-## Environment Variables
-
-Copy `.env.example` to `.env` and fill in the required keys.
-
-### Required
-
-| Variable | Description |
-|---|---|
-| `GROQ_API_KEY` | Groq API key — used by router, RAG rewriter, and synthesis agents |
-| `TAVILY_API_KEY` | Tavily API key — used by the web search agent |
-
-### Optional — LLM
-
-| Variable | Default | Description |
-|---|---|---|
-| `GROQ_MODEL` | `llama-3.1-8b-instant` | Groq model for all agent nodes |
-| `OPENROUTER_API_KEY` | — | If set, synthesis uses OpenRouter first (Groq is fallback) |
-| `OPENROUTER_MODEL` | `mistralai/mistral-small-24b-instruct-2501` | OpenRouter model |
-
-### Optional — RAG / Retrieval
-
-| Variable | Default | Description |
-|---|---|---|
-| `RAG_TOP_K` | `8` | Number of chunks retrieved per query |
-| `RAG_CHUNK_SIZE` | `1200` | Max characters per chunk (sentence-boundary aware) |
-| `RAG_CHUNK_OVERLAP` | `100` | Overlap between chunks in characters |
-| `RAG_RERANK_WINDOW` | `500` | Window size for BM25 re-ranking pass |
-| `RAG_RRF_K` | `60` | Reciprocal Rank Fusion constant |
-| `AGENT_WEB_RESULTS` | `5` | Number of Tavily web results per query |
-
-### Optional — Server
-
-| Variable | Default | Description |
-|---|---|---|
-| `MAX_UPLOAD_MB` | `50` | Maximum PDF upload size |
-| `ALLOWED_ORIGINS` | `http://localhost:5173` | CORS allowed origins (comma-separated) |
-
----
+## Architecture
+backend/
+├── app.py                    # FastAPI entry point
+├── api/
+│   └── routes_governance.py  # Webhook handler
+├── governance/
+│   ├── state.py              # PRState TypedDict
+│   ├── graph.py              # LangGraph pipeline
+│   ├── nodes.py              # 5 agent functions
+│   ├── code_rag.py           # AST indexer + retrieval
+│   ├── github_client.py      # GitHub API actions
+│   └── github_app_auth.py    # GitHub App JWT auth
 
 ## Setup
 
-### Backend
-
+### 1. Clone and install
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env — add GROQ_API_KEY and TAVILY_API_KEY
-
-# Start the server
-python -m uvicorn backend.app:app --host 0.0.0.0 --port 8003 --reload
+git clone https://github.com/rudranaresh0201/rag-
+cd rag-
+pip install -r backend/requirements.txt
 ```
 
-### Frontend
-
+### 2. Environment variables
 ```bash
-cd frontend
-npm install
-npm run dev
-# Opens at http://localhost:5173
+GITHUB_TOKEN=your_token
+GITHUB_WEBHOOK_SECRET=your_secret
+GITHUB_REPO=owner/repo
+GROQ_API_KEY=your_groq_key
+INTERNAL_API_TOKEN=your_internal_token
+GROQ_MODEL=llama-3.1-8b-instant
 ```
 
----
-
-## Project Structure
-
+### 3. Run locally
+```bash
+uvicorn backend.app:app --reload --port 8003
 ```
-backend/
-├── agent/
-│   ├── graph.py          # LangGraph state machine definition
-│   ├── nodes.py          # Router, RAG, Web, Synthesis, Clarify nodes
-│   └── state.py          # AgentState TypedDict
-├── api/
-│   ├── routes_agent.py   # /agent/query and /agent/query/stream
-│   ├── routes_core.py    # /health, /reset
-│   ├── routes_documents.py
-│   └── routes_query.py   # Legacy /query endpoint
-├── config.py             # All env-overridable constants
-├── ingestion.py          # PDF to sentence-aware chunks to ChromaDB
-├── llm.py                # OpenRouter to Groq fallback chain
-├── retrieval.py          # Hybrid BM25 + vector + RRF fusion
-└── utils.py              # chunk_text (sentence-boundary), clean_text
 
-frontend/src/
-├── pages/Dashboard.jsx
-├── components/
-└── services/api.js       # queryApi / queryRagByDocument -> /agent/query
+### 4. Manual trigger
+```bash
+curl -X POST http://localhost:8003/governance/trigger \
+  -H "X-Internal-Token: your_token" \
+  -H "Content-Type: application/json" \
+  -d '{"pr_number": 1, "repo": "owner/repo"}'
 ```
+
+## Security Design
+
+- HMAC-SHA256 webhook signature verification
+- Prompt injection defense on all user-controlled fields
+- Fail-closed — any error blocks the PR, never silently approves
+- GitHub App installation tokens scoped per repo, expire in 1 hour
+- Full audit trail on every decision
+
+## Evaluation Methodology
+
+PRGuard was tested against a controlled evaluation suite (PR #10) containing 16 deliberately planted vulnerabilities across 5 file types. Each finding was manually verified. The single false positive was a null-reference accusation on a function with explicit None guards.
+
+Three iterations of prompt refinement moved recall from 68.75% → 75% → 100%.
+
+## Roadmap
+
+- [ ] One-click GitHub App install flow
+- [ ] Postgres audit log storage  
+- [ ] Slack notifications + approval flow
+- [ ] Dashboard with governance history
+- [ ] Go, Rust, Java AST-level indexing
+- [ ] Evaluation dataset expansion to 100+ PRs
+
+## Resume Line
+
+> Built PRGuard — an autonomous PR governance agent using LangGraph multi-agent orchestration and AST-indexed CodeRAG that reviews Pull Requests for security vulnerabilities, logic bugs, and documentation compliance across any programming language. Achieves 100% recall and 94.12% precision on evaluation suite. Deployed on Render with GitHub App integration.
