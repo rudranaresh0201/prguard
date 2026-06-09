@@ -172,9 +172,9 @@ def build_security_annotations(diff: str) -> list:
     return annotations[:50]
 
 
-def merge_pr(pr_number: int, commit_message: str = "Merged by Governance Agent") -> dict:
+def merge_pr(pr_number: int, commit_message: str = "Merged by Governance Agent", token: str = None, repo_name: str = None) -> dict:
     """Merge a PR."""
-    repo = get_repo()
+    repo = get_repo(token, repo_name)
     pr = repo.get_pull(pr_number)
     result = pr.merge(commit_message=commit_message)
     return {"merged": result.merged, "sha": result.sha, "message": result.message}

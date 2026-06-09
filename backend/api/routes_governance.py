@@ -60,7 +60,7 @@ async def run_governance_pipeline(
         if head_sha:
             for check_name in ("governance/triage", "governance/security", "governance/docs"):
                 try:
-                    check_run_ids[check_name] = create_check_run(check_name, head_sha)
+                    check_run_ids[check_name] = create_check_run(check_name, head_sha, token=token, repo_name=repo)
                 except Exception:
                     logger.warning(
                         "[Governance] Could not create check run '%s' — checks:write permission required",

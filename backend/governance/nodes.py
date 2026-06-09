@@ -58,7 +58,11 @@ def _finish_check(
     if not check_run_id:
         return
     try:
-        complete_check_run(check_run_id, conclusion, title, summary, annotations)
+        complete_check_run(
+            check_run_id, conclusion, title, summary, annotations,
+            token=state.get("github_token"),
+            repo_name=state.get("repo"),
+        )
     except Exception:
         pass
 
@@ -109,9 +113,9 @@ SUMMARY: one line summary"""
 
 Running automated gates..."""
 
-    post_pr_comment(state["pr_number"], comment)
-    add_pr_label(state["pr_number"], f"risk:{risk}")
-    add_pr_label(state["pr_number"], f"type:{pr_type}")
+    post_pr_comment(state["pr_number"], comment, token=state.get("github_token"), repo_name=state.get("repo"))
+    add_pr_label(state["pr_number"], f"risk:{risk}", token=state.get("github_token"), repo_name=state.get("repo"))
+    add_pr_label(state["pr_number"], f"type:{pr_type}", token=state.get("github_token"), repo_name=state.get("repo"))
 
     audit_entry = log_step(state, "triage_node", "classify_pr", f"risk={risk} type={pr_type}")
 
@@ -423,16 +427,16 @@ Security: PASSED
 Docs: PASSED
 
 Requesting human approval via Slack..."""
-        add_pr_label(state["pr_number"], "gates:passed")
+        add_pr_label(state["pr_number"], "gates:passed", token=state.get("github_token"), repo_name=state.get("repo"))
     else:
         comment = f"""## Gates Failed — Merge Blocked
 **Blocking Issues:**
 {chr(10).join(f'- {issue}' for issue in blocking)}
 
 Fix all blocking issues and push a new commit to re-trigger review."""
-        add_pr_label(state["pr_number"], "gates:failed")
+        add_pr_label(state["pr_number"], "gates:failed", token=state.get("github_token"), repo_name=state.get("repo"))
 
-    upsert_pr_comment(state["pr_number"], comment)
+    upsert_pr_comment(state["pr_number"], comment, token=state.get("github_token"), repo_name=state.get("repo"))
     audit_entry = log_step(state, "gate_aggregator", "aggregate_gates", f"passed={gates_passed} blocking={len(blocking)}")
 
     return {
@@ -449,13 +453,15 @@ def merge_node(state: PRState) -> PRState:
 
     result = merge_pr(
         state["pr_number"],
-        commit_message=f"Merged by Governance Agent — all gates passed"
+        commit_message=f"Merged by Governance Agent — all gates passed",
+        token=state.get("github_token"),
+        repo_name=state.get("repo"),
     )
 
     comment = f"""## PR Merged by Governance Agent
 All gates passed. PR merged autonomously.
 Commit: {result.get('sha', 'N/A')}"""
-    post_pr_comment(state["pr_number"], comment)
+    post_pr_comment(state["pr_number"], comment, token=state.get("github_token"), repo_name=state.get("repo"))
 
     audit_entry = log_step(state, "merge_node", "merge_pr", f"merged={result.get('merged')} sha={result.get('sha')}")
 
