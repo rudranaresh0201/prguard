@@ -61,9 +61,31 @@ def post_review_comment(pr_number: int, body: str, commit_sha: str, path: str, l
     comment = pr.create_review_comment(body=body, commit=commit, path=path, line=line)
     return {"comment_id": comment.id, "url": comment.html_url}
 
+def ensure_label_exists(repo, label: str) -> None:
+    """Create label if it doesn't exist."""
+    color_map = {
+        "risk:low": "0075ca",
+        "risk:medium": "e4e669",
+        "risk:high": "d93f0b",
+        "risk:critical": "b60205",
+        "type:feature": "0052cc",
+        "type:bugfix": "5319e7",
+        "security:failed": "d93f0b",
+        "docs:failed": "e4e669",
+        "gates:failed": "b60205",
+        "gates:passed": "0e8a16",
+    }
+    try:
+        repo.get_label(label)
+    except Exception:
+        color = color_map.get(label, "ededed")
+        repo.create_label(label, color)
+
+
 def add_pr_label(pr_number: int, label: str, token: str = None, repo_name: str = None) -> None:
     """Add a label to a PR."""
     repo = get_repo(token, repo_name)
+    ensure_label_exists(repo, label)
     pr = repo.get_pull(pr_number)
     pr.add_to_labels(label)
 
