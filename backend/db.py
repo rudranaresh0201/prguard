@@ -9,7 +9,7 @@ from typing import Dict, List
 import chromadb
 from chromadb.api.models.Collection import Collection
 from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
+from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
 from .core.logging import get_logger
 
@@ -27,7 +27,7 @@ COLLECTION_NAME = "rag_documents"
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
 
 _client = None
-_embedder: SentenceTransformer | None = None
+_embedder: ONNXMiniLM_L6_V2 | None = None
 _collection_verified = False
 _client_lock = threading.Lock()
 _embedder_lock = threading.Lock()
@@ -135,13 +135,13 @@ def get_collection() -> Collection:
     return collection
 
 
-def get_embedder() -> SentenceTransformer:
+def get_embedder() -> ONNXMiniLM_L6_V2:
     global _embedder
     if _embedder is not None:
         return _embedder
     with _embedder_lock:
         if _embedder is None:
-            _embedder = SentenceTransformer(EMBEDDING_MODEL_NAME)
+            _embedder = ONNXMiniLM_L6_V2()
     return _embedder
 
 
@@ -150,9 +150,8 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
         logger.warning("[EMBED] embed_texts called with empty list")
         return []
     model = get_embedder()
-    logger.debug("[EMBED] Encoding %d texts with model=%s", len(texts), EMBEDDING_MODEL_NAME)
-    vectors = model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
-    result = vectors.tolist()
+    logger.debug("[EMBED] Encoding %d texts", len(texts))
+    result = model(texts)
     dim = len(result[0]) if result else 0
     logger.info("[EMBED] Embeddings ready: count=%d dimensions=%d", len(result), dim)
     return result
