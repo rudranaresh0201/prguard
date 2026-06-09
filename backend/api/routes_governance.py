@@ -1,25 +1,35 @@
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Request, HTTPException, BackgroundTasks, Header, Depends
 from dotenv import load_dotenv
 load_dotenv(override=True)
 import hmac
 import hashlib
 import os
 import json
+from typing import Optional
+from pydantic import BaseModel, validator
 
-from backend.governance.graph import governance_graph
+from backend.governance.graph import run_pipeline_with_recovery
 from backend.governance.state import PRState
-from backend.governance.github_client import get_pr_details, get_pr_diff
+from backend.governance.github_client import get_pr_details, fetch_pr_diff, create_check_run
 from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/governance", tags=["governance"])
 
-GITHUB_WEBHOOK_SECRET = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+_secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+if not _secret:
+    raise RuntimeError("GITHUB_WEBHOOK_SECRET env var must be set before starting the server")
+GITHUB_WEBHOOK_SECRET: str = _secret
+
+_internal_token = os.getenv("INTERNAL_API_TOKEN")
+if not _internal_token:
+    raise RuntimeError("INTERNAL_API_TOKEN env var must be set before starting the server")
+INTERNAL_API_TOKEN: str = _internal_token
 
 def verify_webhook_signature(payload: bytes, signature: str) -> bool:
-    if not GITHUB_WEBHOOK_SECRET:
-        return True  # skip verification in dev
+    if not signature:
+        return False
     expected = "sha256=" + hmac.new(
         GITHUB_WEBHOOK_SECRET.encode(),
         payload,
@@ -27,10 +37,23 @@ def verify_webhook_signature(payload: bytes, signature: str) -> bool:
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
 
-async def run_governance_pipeline(pr_number: int, repo: str):
+async def run_governance_pipeline(pr_number: int, repo: str, diff: str):
     try:
         details = get_pr_details(pr_number)
-        diff = get_pr_diff(pr_number)
+
+        # Create all governance check runs upfront so they show as in_progress together.
+        # Silently skips if GITHUB_TOKEN lacks checks:write (labels/comments still work).
+        check_run_ids: dict = {}
+        head_sha = details.get("head_sha", "")
+        if head_sha:
+            for check_name in ("governance/triage", "governance/security", "governance/docs"):
+                try:
+                    check_run_ids[check_name] = create_check_run(check_name, head_sha)
+                except Exception:
+                    logger.warning(
+                        "[Governance] Could not create check run '%s' — checks:write permission required",
+                        check_name,
+                    )
 
         initial_state: PRState = {
             "pr_number": pr_number,
@@ -57,18 +80,57 @@ async def run_governance_pipeline(pr_number: int, repo: str):
             "policy_context": [],
             "agent_steps": [],
             "audit_log": [],
+            "check_run_ids": check_run_ids,
+            "errors": [],
+            "risk_level": "",
+            "risk_reason": "",
+            "triage_passed": False,
+            "security_passed": False,
+            "security_issues": "",
+            "security_severity": "",
+            "security_details": "",
+            "docs_passed": False,
+            "docs_missing": "",
+            "docs_suggestions": "",
         }
 
-        result = await governance_graph.ainvoke(initial_state)
+        result = await run_pipeline_with_recovery(pr_number, repo, initial_state)
 
-        logger.info("[Governance] PR #%s complete", pr_number)
-        logger.info("[Governance] Steps: %s", result['agent_steps'])
-        logger.info("[Governance] Gates passed: %s", result['gates_passed'])
-        logger.info("[Governance] Merged: %s", result['merged'])
+        if result:
+            logger.info("[Governance] PR #%s complete", pr_number)
+            logger.info("[Governance] Steps: %s", result['agent_steps'])
+            logger.info("[Governance] Gates passed: %s", result['gates_passed'])
+            logger.info("[Governance] Merged: %s", result['merged'])
 
     except Exception as e:
-        logger.exception("[Governance] ERROR on PR #%s: %s", pr_number, e)
+        logger.exception("[Governance] ERROR building state for PR #%s: %s", pr_number, e)
         raise
+
+async def verify_internal_token(x_internal_token: str = Header(None)):
+    if not x_internal_token:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not hmac.compare_digest(x_internal_token, INTERNAL_API_TOKEN):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+class TriggerRequest(BaseModel):
+    pr_number: int
+    repo: Optional[str] = None
+
+    @validator("pr_number")
+    def pr_number_positive(cls, v):
+        if v <= 0:
+            raise ValueError("pr_number must be positive")
+        return v
+
+    @validator("repo")
+    def repo_format(cls, v):
+        if v is not None:
+            import re
+            if not re.match(r'^[\w.\-]+/[\w.\-]+$', v):
+                raise ValueError("repo must be in format owner/name")
+        return v
+
 
 @router.post("/webhook")
 async def github_webhook(request: Request, background_tasks: BackgroundTasks):
@@ -76,7 +138,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     signature = request.headers.get("X-Hub-Signature-256", "")
 
     if not verify_webhook_signature(payload_bytes, signature):
-        raise HTTPException(status_code=401, detail="Invalid signature")
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
     payload = json.loads(payload_bytes)
     event = request.headers.get("X-GitHub-Event", "")
@@ -86,17 +148,33 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
         if action in ["opened", "synchronize", "reopened"]:
             pr_number = payload["pull_request"]["number"]
             repo = payload["repository"]["full_name"]
+            try:
+                diff = fetch_pr_diff(pr_number)
+            except Exception:
+                logger.exception("[Governance] Failed to fetch diff for PR #%s", pr_number)
+                diff = "[DIFF FETCH FAILED]"
             logger.info("[Governance] PR #%s %s — starting pipeline", pr_number, action)
-            background_tasks.add_task(run_governance_pipeline, pr_number, repo)
+            background_tasks.add_task(run_governance_pipeline, pr_number, repo, diff)
             return {"status": "accepted", "pr": pr_number, "action": action}
 
     return {"status": "ignored", "event": event}
 
-@router.post("/trigger/{pr_number}")
-async def manual_trigger(pr_number: int, background_tasks: BackgroundTasks):
-    """Manually trigger governance pipeline for a PR — for testing."""
-    repo = os.getenv("GITHUB_REPO")
-    background_tasks.add_task(run_governance_pipeline, pr_number, repo)
+@router.post("/trigger")
+async def manual_trigger(
+    body: TriggerRequest,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(verify_internal_token),
+):
+    pr_number = body.pr_number
+    repo = body.repo or os.getenv("GITHUB_REPO")
+    if not repo:
+        raise HTTPException(status_code=400, detail="repo not provided and GITHUB_REPO not set")
+    try:
+        diff = fetch_pr_diff(pr_number)
+    except Exception:
+        logger.exception("[Governance] Failed to fetch diff for PR #%s", pr_number)
+        diff = "[DIFF FETCH FAILED]"
+    background_tasks.add_task(run_governance_pipeline, pr_number, repo, diff)
     return {"status": "triggered", "pr": pr_number, "repo": repo}
 
 @router.post("/start-tunnel")

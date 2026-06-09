@@ -17,3 +17,10 @@ backend/task_state.json
 
 .env
 audit_logs/*.json
+backend/code_chroma_db/
+*.log
+*.err
+server_stderr.log
+server_stdout.log
+server8003.log
+server8003.err

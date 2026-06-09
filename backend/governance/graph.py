@@ -1,5 +1,9 @@
+import asyncio
+import logging
+
 from langgraph.graph import StateGraph, END
 from backend.governance.state import PRState
+from backend.governance.github_client import post_pr_comment, add_pr_label
 from backend.governance.nodes import (
     triage_node,
     context_retrieval_node,
@@ -45,3 +49,29 @@ def build_governance_graph():
     return graph.compile()
 
 governance_graph = build_governance_graph()
+
+logger = logging.getLogger(__name__)
+
+
+async def run_pipeline_with_recovery(pr_number: int, repo: str, initial_state: dict):
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(None, governance_graph.invoke, initial_state)
+        return result
+    except Exception as e:
+        logger.exception(
+            "[Governance] Pipeline failed for PR #%s repo=%s: %s",
+            pr_number, repo, e
+        )
+        try:
+            post_pr_comment(
+                pr_number,
+                "🚫 Governance system error — PR blocked pending manual review.\n"
+                f"Error: `{type(e).__name__}`. Contact the platform team."
+            )
+        except Exception:
+            logger.exception("[Governance] Could not post error comment for PR #%s", pr_number)
+        try:
+            add_pr_label(pr_number, "blocked:pipeline-error")
+        except Exception:
+            logger.exception("[Governance] Could not block PR #%s after pipeline error", pr_number)

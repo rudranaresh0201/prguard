@@ -37,3 +37,26 @@ class PRState(TypedDict):
     # Audit
     agent_steps: list[str]
     audit_log: list[dict]
+
+    # GitHub Checks API — maps check name to check run ID (empty if checks:write unavailable)
+    check_run_ids: dict
+
+    # Error tracking
+    errors: list[str]
+
+    # Triage outputs
+    risk_level: str
+    risk_reason: str
+    triage_passed: bool
+
+    # Security outputs (top-level, populated on both success and LLM error)
+    security_passed: bool
+    security_issues: str
+    security_severity: str
+    security_details: str
+    security_fixes: list[str]
+
+    # Docs outputs (top-level, populated on both success and LLM error)
+    docs_passed: bool
+    docs_missing: str
+    docs_suggestions: str
