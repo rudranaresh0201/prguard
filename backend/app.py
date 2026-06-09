@@ -1,4 +1,5 @@
 from __future__ import annotations
+from contextlib import asynccontextmanager
 from pathlib import Path
 from dotenv import load_dotenv
 # Load the .env that lives next to this file, regardless of the CWD uvicorn is launched from
@@ -22,7 +23,19 @@ from .api.routes_documents import router as documents_router
 from backend.api.routes_agent import router as agent_router
 from .tasks import load_task_state_on_startup
 
-app = FastAPI(title="PDF RAG Backend", version="2.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+        ONNXMiniLM_L6_V2()
+        print("Embedding model loaded")
+    except Exception as e:
+        print(f"Embedding model load warning: {e}")
+    yield
+
+
+app = FastAPI(lifespan=lifespan, title="PDF RAG Backend", version="2.0.0")
 logger = get_logger(__name__)
 
 app.add_middleware(
@@ -71,4 +84,4 @@ app.include_router(governance_router)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("backend.app:app", host="127.0.0.1", port=8003, reload=True)
+    uvicorn.run("backend.app:app", host="0.0.0.0", port=8003, reload=True)
