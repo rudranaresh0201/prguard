@@ -215,39 +215,46 @@ def security_node(state: PRState) -> PRState:
     safe_title  = sanitize_for_prompt(state["title"], 300)
     safe_author = sanitize_for_prompt(state["author"], 100)
     prompt = f"""You are a senior security engineer reviewing a Pull Request.
+This PR may contain code in any language — Python, JavaScript,
+Solidity, Verilog, YAML, Dockerfile, SQL, Bash, or others.
+Review everything in the diff regardless of language.
 
 PR Title: {safe_title}
 Author: {safe_author}
 
-Changes (diff):
 {DIFF_OPEN}
-{diff[:2000]}
+{diff[:3000]}
 {DIFF_CLOSE}
+
 {code_context_str}
 
-Review for ALL of these:
-1. Hardcoded secrets, API keys, passwords, tokens
-2. SQL injection via f-strings or string concatenation
-3. Insecure cryptography (MD5, SHA1 for passwords)
-4. Missing input validation
-5. Missing authentication/authorization
+Review for ALL of these regardless of language:
+1. Hardcoded secrets, API keys, passwords, tokens, private keys
+2. Injection vulnerabilities (SQL, command, LDAP, template)
+3. Insecure cryptography (MD5, SHA1, weak keys)
+4. Missing input validation or sanitization
+5. Missing authentication or authorization checks
 6. Exposed sensitive data in logs or responses
-7. Duplicate functionality that already exists in codebase (check existing code above)
-8. Architecture violations based on existing patterns
+7. Dangerous functions (eval, exec, system calls with user input)
+8. Insecure configurations (debug mode, weak TLS, open CORS)
+9. Duplicate functionality already in codebase
+10. Architecture violations based on existing patterns
 
-Be specific — reference exact line content when flagging issues.
+For Solidity: check reentrancy, integer overflow, tx.origin
+For Dockerfile: check root user, latest tags, secrets in ENV
+For YAML/configs: check plaintext secrets, insecure defaults
+For Bash: check unquoted variables, unsafe pipes
 
 Respond in exactly this format:
 VERDICT: pass|fail
 ISSUES: comma-separated list of specific issues found, or 'none'
 SEVERITY: low|medium|high|critical
 DETAILS: one sentence explaining the most critical finding
-
-For each issue found, provide a specific code fix prefixed with FIX_.
-Format exactly like this:
-FIX_1: corrected_code_here
-FIX_2: corrected_code_here
-Only include fixes for the actual issues found. Max 5 fixes."""
+FIX_1: corrected code for issue 1
+FIX_2: corrected code for issue 2
+FIX_3: corrected code for issue 3
+FIX_4: corrected code for issue 4
+FIX_5: corrected code for issue 5"""
 
     try:
         result = llm.invoke(prompt).content.strip()

@@ -6,25 +6,20 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 import chromadb
-from sentence_transformers import SentenceTransformer
+from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
-EMBED_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-base-en-v1.5")
 CHROMA_PATH = os.getenv("CODE_CHROMA_PATH", str(Path(__file__).resolve().parent.parent / "code_chroma_db"))
 
-_embedder = None
+ef = ONNXMiniLM_L6_V2()
 _code_collection = None
-
-def get_embedder():
-    global _embedder
-    if _embedder is None:
-        _embedder = SentenceTransformer(EMBED_MODEL)
-    return _embedder
 
 def get_code_collection():
     global _code_collection
     if _code_collection is None:
         client = chromadb.PersistentClient(path=CHROMA_PATH)
-        _code_collection = client.get_or_create_collection("codebase")
+        _code_collection = client.get_or_create_collection(
+            "codebase", embedding_function=ef
+        )
     return _code_collection
 
 def chunk_file_by_functions(filepath: str) -> List[Dict]:
@@ -47,58 +42,74 @@ def chunk_file_by_functions(filepath: str) -> List[Dict]:
                         "line": node.lineno,
                         "type": "class" if isinstance(node, ast.ClassDef) else "function"
                     })
-    except Exception as e:
+    except Exception:
         pass
     return chunks
 
-def index_repository(repo_path: str = ".") -> int:
-    """Index all Python files in the repository at function level."""
+def extract_chunks_from_file(filepath: str) -> List[Dict]:
+    SKIP_EXTENSIONS = {
+        '.pyc','.pyo','.pyd','.so','.dll','.exe','.bin',
+        '.jpg','.jpeg','.png','.gif','.ico','.svg',
+        '.pdf','.zip','.tar','.gz','.lock','.sum'
+    }
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext in SKIP_EXTENSIONS:
+        return []
+    if ext == '.py':
+        return chunk_file_by_functions(filepath)
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+    except Exception:
+        return []
+    if not lines or len(lines) > 5000:
+        return []
+    chunks = []
+    chunk_size = 30
+    overlap = 10
+    i = 0
+    while i < len(lines):
+        chunk_lines = lines[i:i+chunk_size]
+        text = ''.join(chunk_lines).strip()
+        if text:
+            chunks.append({
+                "file": filepath,
+                "function": f"lines_{i+1}_{min(i+chunk_size,len(lines))}",
+                "text": text,
+                "start_line": i,
+                "end_line": min(i+chunk_size, len(lines)),
+            })
+        i += chunk_size - overlap
+    return chunks
+
+def index_codebase(root_dir: str):
+    SKIP_DIRS = {'.git','__pycache__','node_modules',
+                 '.venv','venv','env','.env','dist',
+                 'build','.next','coverage'}
     collection = get_code_collection()
-    embedder = get_embedder()
-
-    py_files = list(Path(repo_path).rglob("*.py"))
-    # Skip test files, migrations, venv
-    py_files = [f for f in py_files if not any(
-        skip in str(f) for skip in ["__pycache__", ".venv", "venv", "node_modules", "migrations"]
-    )]
-
-    total = 0
-    for filepath in py_files:
-        chunks = chunk_file_by_functions(str(filepath))
-        for i, chunk in enumerate(chunks):
-            chunk_id = f"{filepath}:{chunk['function']}:{chunk['line']}"
-            text = f"File: {chunk['file']}\nFunction: {chunk['function']}\n\n{chunk['text']}"
-            embedding = embedder.encode(
-                text, normalize_embeddings=True, show_progress_bar=False
-            ).tolist()
-            collection.upsert(
-                ids=[chunk_id],
-                embeddings=[embedding],
-                documents=[chunk["text"]],
-                metadatas=[{
-                    "file": chunk["file"],
-                    "function": chunk["function"],
-                    "line": chunk["line"],
-                    "type": chunk["type"]
-                }]
-            )
-            total += 1
-    return total
+    all_chunks = []
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for fname in filenames:
+            fpath = os.path.join(dirpath, fname)
+            all_chunks.extend(extract_chunks_from_file(fpath))
+    for i in range(0, len(all_chunks), 100):
+        batch = all_chunks[i:i+100]
+        collection.upsert(
+            ids=[f"{c['file']}::{c['function']}" for c in batch],
+            documents=[c['text'] for c in batch],
+            metadatas=[{"file": c['file'], "function": c['function']} for c in batch]
+        )
 
 def retrieve_similar_code(query: str, top_k: int = 5) -> List[Dict]:
     """Retrieve similar code chunks for a query."""
     collection = get_code_collection()
-    embedder = get_embedder()
 
     if collection.count() == 0:
         return []
 
-    embedding = embedder.encode(
-        query, normalize_embeddings=True, show_progress_bar=False
-    ).tolist()
-
     results = collection.query(
-        query_embeddings=[embedding],
+        query_texts=[query],
         n_results=min(top_k, collection.count()),
         include=["documents", "metadatas", "distances"]
     )
@@ -117,14 +128,21 @@ def retrieve_similar_code(query: str, top_k: int = 5) -> List[Dict]:
         })
     return chunks
 
-def extract_modules_from_diff(diff: str) -> List[str]:
-    """Extract touched module names from a PR diff."""
+def extract_modules_from_diff(diff: str) -> Dict:
+    """Extract touched file paths and module names from a PR diff."""
+    import re
     modules = set()
+    files = set()
+
     for line in diff.split("\n"):
-        if line.startswith("+++") or line.startswith("---"):
-            parts = line.split("/")
-            if len(parts) > 1:
-                for part in parts:
-                    if part and not part.startswith(".") and "." not in part:
-                        modules.add(part.lower())
-    return list(modules)[:5]
+        if line.startswith("+++ b/") or line.startswith("--- a/"):
+            path = line.replace("+++ b/", "").replace("--- a/", "").strip()
+            if path and path != "/dev/null":
+                files.add(path)
+                parts = [p for p in path.split("/")
+                         if p and not p.startswith(".")
+                         and not p.endswith(".py")
+                         and p not in ["a", "b", "src", "lib"]]
+                modules.update(parts[:3])
+
+    return {"modules": list(modules), "files": list(files)}
