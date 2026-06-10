@@ -51,7 +51,7 @@ async def run_governance_pipeline(
         else:
             token = os.getenv("GITHUB_TOKEN")
 
-        details = get_pr_details(pr_number, token=token)
+        details = get_pr_details(pr_number, token=token, repo_name=repo)
 
         # Create all governance check runs upfront so they show as in_progress together.
         # Silently skips if GITHUB_TOKEN lacks checks:write (labels/comments still work).
@@ -243,8 +243,9 @@ async def manual_trigger(
     repo = body.repo or os.getenv("GITHUB_REPO")
     if not repo:
         raise HTTPException(status_code=400, detail="repo not provided and GITHUB_REPO not set")
+    token = os.getenv("GITHUB_TOKEN")
     try:
-        diff = fetch_pr_diff(pr_number)
+        diff = fetch_pr_diff(pr_number, token=token, repo_name=repo)
     except Exception:
         logger.exception("[Governance] Failed to fetch diff for PR #%s", pr_number)
         diff = "[DIFF FETCH FAILED]"
