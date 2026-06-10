@@ -250,6 +250,20 @@ Review for ALL of these regardless of language:
     Example: a delete_user() function with no
     @login_required, no role check, no token validation
     is an authorization vulnerability.
+12. Path traversal — user input used in file paths
+    (open(user_input), os.path.join with user data,
+    directory traversal via ../)
+13. XSS — unsanitized user input rendered in HTML
+    (dangerouslySetInnerHTML, innerHTML, document.write,
+    template literals in HTML context)
+14. Infinite retry loops — retry logic with no max attempt
+    limit, no backoff, or no circuit breaker
+15. Dependency confusion — imports of internal package
+    names that could be hijacked on public registries
+16. Insecure deserialization — pickle.loads, yaml.load
+    without Loader, eval on serialized data
+17. SSRF — user-controlled URLs passed to requests.get,
+    fetch, urllib without validation
 
 For Solidity:
 - Reentrancy: flag ANY function that makes an external
@@ -519,6 +533,19 @@ Find ALL of these regardless of language:
 10. Edge cases not handled (empty input, negative numbers, empty array)
 11. Incorrect algorithm logic
 12. Dead code or unreachable code
+13. N+1 query problem — database query inside a loop
+    (for item in items: db.query(...)) instead of a
+    single bulk query
+14. O(n squared) performance regression — nested loops
+    over the same collection, quadratic string concatenation
+15. Unbounded memory growth — appending to a list/dict
+    inside a loop with no size limit or cleanup
+16. Missing circuit breaker — external API calls with
+    no timeout, no retry limit, no fallback
+17. Race condition — shared mutable state accessed from
+    multiple threads/goroutines without locks
+18. Infinite retry — while True retry loops with no
+    max_attempts counter or exponential backoff
 
 Be specific — reference exact function names and line content.
 Only flag real bugs, not style preferences.
@@ -622,7 +649,303 @@ Fix every bug listed. Be precise — FIND must match exactly."""
     }
 
 
-# ── 5. Gate Aggregator Node ─────────────────────────────────
+# ── 5. Guidelines Node ──────────────────────────────────────
+def guidelines_node(state: PRState) -> PRState:
+    from backend.governance.github_client import get_file_content
+
+    guidelines_content = ""
+    try:
+        file_data = get_file_content(
+            ".prguard.yml",
+            branch=state.get("base_branch", "main"),
+            token=state.get("github_token"),
+            repo_name=state.get("repo"),
+        )
+        if not file_data.get("error"):
+            guidelines_content = file_data.get("content", "")
+    except Exception:
+        pass
+
+    if not guidelines_content:
+        return {
+            **state,
+            "guidelines_passed": True,
+            "guidelines_violations": "none",
+            "guidelines_checked": False,
+            "agent_steps": state["agent_steps"] + [
+                "Guidelines -> skipped (no .prguard.yml found)"
+            ],
+        }
+
+    safe_title = sanitize_for_prompt(state["title"], 300)
+    prompt = f"""You are a senior engineer enforcing team coding guidelines.
+
+PR Title: {safe_title}
+
+Team Guidelines (.prguard.yml):
+{guidelines_content[:2000]}
+
+{DIFF_OPEN}
+{state['diff'][:3000]}
+{DIFF_CLOSE}
+
+Check if the PR violates any of the team guidelines above.
+Be specific — reference exact guideline names and line content.
+
+Respond in exactly this format:
+VERDICT: pass|fail
+VIOLATIONS: comma-separated list of violated guidelines, or 'none'
+SEVERITY: low|medium|high|critical
+DETAILS: one sentence summary"""
+
+    try:
+        result = llm.invoke(prompt).content.strip()
+    except Exception as e:
+        return {
+            **state,
+            "guidelines_passed": False,
+            "guidelines_violations": f"llm_error: {type(e).__name__}",
+            "guidelines_checked": True,
+            "errors": state["errors"] + [f"guidelines_llm_error: {e}"],
+            "agent_steps": state["agent_steps"] + ["Guidelines -> llm_error"],
+        }
+
+    lines = {l.split(":")[0].strip(): ":".join(l.split(":")[1:]).strip()
+             for l in result.split("\n") if ":" in l}
+
+    verdict = lines.get("VERDICT", "pass").lower()
+    violations = lines.get("VIOLATIONS", "none")
+    severity = lines.get("SEVERITY", "low")
+    blocking = verdict == "fail" and severity in ["high", "critical"]
+
+    _finish_check(
+        state, "governance/guidelines",
+        "failure" if verdict == "fail" else "success",
+        f"Guidelines: {'FAILED' if verdict == 'fail' else 'PASSED'}",
+        f"**Violations:** {violations}",
+    )
+
+    audit_entry = log_step(state, "guidelines_node", "guidelines_check",
+                           f"verdict={verdict} violations={violations}")
+
+    return {
+        **state,
+        "guidelines_passed": verdict == "pass",
+        "guidelines_violations": violations,
+        "guidelines_checked": True,
+        "blocking_issues": state["blocking_issues"] + (
+            [f"Guidelines: {violations}"] if blocking else []
+        ),
+        "agent_steps": state["agent_steps"] + [f"Guidelines -> {verdict.upper()}"],
+        "audit_log": state["audit_log"] + [audit_entry],
+    }
+
+
+# ── 5b. API Change Node ──────────────────────────────────────
+def api_change_node(state: PRState) -> PRState:
+    diff = state["diff"]
+    safe_title = sanitize_for_prompt(state["title"], 300)
+
+    prompt = f"""You are a senior API design engineer reviewing a Pull Request for API changes.
+
+PR Title: {safe_title}
+
+{DIFF_OPEN}
+{diff[:3000]}
+{DIFF_CLOSE}
+
+Analyze for ALL of these:
+1. New public functions, classes, or endpoints added
+2. Existing public function signatures changed
+3. Return type changes on existing functions
+4. Removed public functions or endpoints (breaking)
+5. Changed HTTP methods or endpoint URLs (breaking)
+6. Changed response or request schema (breaking)
+7. New required parameters added to existing endpoints
+8. Config file changes that affect API behavior
+9. Database schema changes (migrations added)
+10. Environment variable changes (new required vars)
+
+Respond in exactly this format:
+VERDICT: pass|fail
+CHANGES: comma-separated list of API changes, or 'none'
+BREAKING: yes|no
+SEVERITY: low|medium|high|critical
+DETAILS: one sentence summary"""
+
+    try:
+        result = llm.invoke(prompt).content.strip()
+    except Exception as e:
+        return {
+            **state,
+            "api_changes_detected": False,
+            "api_changes_summary": f"llm_error: {type(e).__name__}",
+            "breaking_changes": False,
+            "errors": state["errors"] + [f"api_change_llm_error: {e}"],
+            "agent_steps": state["agent_steps"] + ["API Changes -> llm_error"],
+        }
+
+    lines = {l.split(":")[0].strip(): ":".join(l.split(":")[1:]).strip()
+             for l in result.split("\n") if ":" in l}
+
+    verdict = lines.get("VERDICT", "pass").lower()
+    changes = lines.get("CHANGES", "none")
+    breaking = lines.get("BREAKING", "no").lower() == "yes"
+    severity = lines.get("SEVERITY", "low")
+
+    _finish_check(
+        state, "governance/api-changes",
+        "failure" if breaking else "success",
+        f"API Changes: {'BREAKING DETECTED' if breaking else 'No breaking changes'}",
+        f"**Changes:** {changes}",
+    )
+
+    audit_entry = log_step(state, "api_change_node", "api_check",
+                           f"changes={changes} breaking={breaking}")
+
+    return {
+        **state,
+        "api_changes_detected": verdict == "fail",
+        "api_changes_summary": changes,
+        "breaking_changes": breaking,
+        "blocking_issues": state["blocking_issues"] + (
+            [f"Breaking API change: {changes}"] if breaking else []
+        ),
+        "agent_steps": state["agent_steps"] + [
+            f"API Changes -> {'BREAKING' if breaking else 'clean'}"
+        ],
+        "audit_log": state["audit_log"] + [audit_entry],
+    }
+
+
+# ── 5c. Critical File Node ───────────────────────────────────
+def critical_file_node(state: PRState) -> PRState:
+    diff = state["diff"]
+
+    CRITICAL_PATTERNS = [
+        ("auth", "Authentication"),
+        ("login", "Authentication"),
+        ("password", "Authentication"),
+        ("token", "Authentication"),
+        ("secret", "Secrets"),
+        ("payment", "Payments"),
+        ("billing", "Payments"),
+        ("stripe", "Payments"),
+        ("migration", "Database Schema"),
+        ("schema", "Database Schema"),
+        ("config", "Configuration"),
+        ("settings", "Configuration"),
+        ("requirements.txt", "Dependencies"),
+        ("package.json", "Dependencies"),
+        ("package-lock.json", "Dependencies"),
+        ("pipfile", "Dependencies"),
+        ("go.mod", "Dependencies"),
+        ("cargo.toml", "Dependencies"),
+        (".env", "Environment"),
+        ("dockerfile", "Infrastructure"),
+        ("docker-compose", "Infrastructure"),
+        ("terraform", "Infrastructure"),
+        (".github/workflows", "CI/CD"),
+        ("deploy", "Deployment"),
+    ]
+
+    touched_files = []
+    for line in diff.split("\n"):
+        if line.startswith("+++ b/"):
+            path = line.replace("+++ b/", "").strip().lower()
+            if path and path != "/dev/null":
+                touched_files.append(path)
+
+    critical_touched = []
+    for filepath in touched_files:
+        for pattern, category in CRITICAL_PATTERNS:
+            if pattern in filepath:
+                critical_touched.append(f"{category}: {filepath}")
+                break
+
+    dep_issues = "none"
+    dep_passed = True
+
+    dep_files = [f for f in touched_files if any(
+        d in f for d in ["requirements.txt", "package.json",
+                         "pipfile", "go.mod", "cargo.toml"]
+    )]
+
+    if dep_files:
+        dep_prompt = f"""You are a dependency security reviewer.
+
+Changed dependency files: {', '.join(dep_files)}
+
+Diff:
+{diff[:2000]}
+
+Check for:
+1. New dependencies — suspicious names or typosquatting
+2. Dependencies not pinned to exact versions
+3. Known vulnerable package patterns
+4. Removed dependencies that could break functionality
+5. Major version bumps with breaking changes
+
+VERDICT: pass|fail
+ISSUES: comma-separated issues or 'none'
+SEVERITY: low|medium|high|critical"""
+
+        try:
+            dep_result = llm.invoke(dep_prompt).content.strip()
+            dep_lines = {l.split(":")[0].strip(): ":".join(l.split(":")[1:]).strip()
+                        for l in dep_result.split("\n") if ":" in l}
+            dep_verdict = dep_lines.get("VERDICT", "pass").lower()
+            dep_issues = dep_lines.get("ISSUES", "none")
+            dep_passed = dep_verdict == "pass"
+        except Exception as e:
+            dep_issues = f"llm_error: {type(e).__name__}"
+
+    if critical_touched:
+        comment_body = (
+            "## Critical Files Touched\n\n"
+            + "\n".join(f"- {c}" for c in critical_touched)
+            + "\n\nPlease ensure additional review from the relevant team."
+        )
+        post_pr_comment(
+            state["pr_number"], comment_body,
+            token=state.get("github_token"),
+            repo_name=state.get("repo"),
+        )
+        add_pr_label(
+            state["pr_number"], "critical-files-touched",
+            token=state.get("github_token"),
+            repo_name=state.get("repo"),
+        )
+
+    audit_entry = log_step(
+        state, "critical_file_node", "critical_check",
+        f"critical={len(critical_touched)} dep_issues={dep_issues}"
+    )
+
+    _finish_check(
+        state, "governance/critical-files",
+        "failure" if not dep_passed else "success",
+        f"Critical Files: {len(critical_touched)} flagged, Deps: {'issues found' if not dep_passed else 'clean'}",
+        f"**Critical files:** {', '.join(critical_touched) or 'none'}\n**Dependency issues:** {dep_issues}",
+    )
+
+    return {
+        **state,
+        "critical_files_touched": critical_touched,
+        "dependency_issues": dep_issues,
+        "dependency_passed": dep_passed,
+        "blocking_issues": state["blocking_issues"] + (
+            [f"Dependency issues: {dep_issues}"] if not dep_passed else []
+        ),
+        "agent_steps": state["agent_steps"] + [
+            f"Critical files: {len(critical_touched)} flagged, "
+            f"Deps: {'issues found' if not dep_passed else 'clean'}"
+        ],
+        "audit_log": state["audit_log"] + [audit_entry],
+    }
+
+
+# ── 6. Gate Aggregator Node ─────────────────────────────────
 def gate_aggregator_node(state: PRState) -> PRState:
     blocking = list(state["blocking_issues"])
 

@@ -14,6 +14,9 @@ from backend.governance.nodes import (
     security_node,
     docs_node,
     bug_detection_node,
+    guidelines_node,
+    api_change_node,
+    critical_file_node,
     gate_aggregator_node,
     merge_node,
     no_merge_node,
@@ -31,6 +34,9 @@ def build_governance_graph():
     graph.add_node("security",          security_node)
     graph.add_node("docs",              docs_node)
     graph.add_node("bug_detection",     bug_detection_node)
+    graph.add_node("guidelines",        guidelines_node)
+    graph.add_node("api_changes",       api_change_node)
+    graph.add_node("critical_files",    critical_file_node)
     graph.add_node("gate_aggregator",   gate_aggregator_node)
     graph.add_node("merge",             merge_node)
     graph.add_node("no_merge",          no_merge_node)
@@ -41,7 +47,10 @@ def build_governance_graph():
     graph.add_edge("context_retrieval", "security")
     graph.add_edge("security",          "docs")
     graph.add_edge("docs",              "bug_detection")
-    graph.add_edge("bug_detection",     "gate_aggregator")
+    graph.add_edge("bug_detection",     "guidelines")
+    graph.add_edge("guidelines",        "api_changes")
+    graph.add_edge("api_changes",       "critical_files")
+    graph.add_edge("critical_files",    "gate_aggregator")
 
     graph.add_conditional_edges(
         "gate_aggregator",

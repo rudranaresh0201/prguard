@@ -68,5 +68,20 @@ class PRState(TypedDict):
     bugs_passed: bool
     bug_fix_suggestions: list
 
+    # Guidelines check outputs
+    guidelines_passed: bool
+    guidelines_violations: str
+    guidelines_checked: bool
+
+    # API change detection outputs
+    api_changes_detected: bool
+    api_changes_summary: str
+    breaking_changes: bool
+
+    # Critical file / dependency outputs
+    critical_files_touched: list
+    dependency_issues: str
+    dependency_passed: bool
+
     # Auth
     github_token: str
