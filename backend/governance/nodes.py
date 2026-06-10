@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv(override=True)
@@ -299,6 +300,7 @@ FIX_3: corrected code for issue 3
 FIX_4: corrected code for issue 4
 FIX_5: corrected code for issue 5"""
 
+    time.sleep(8)
     try:
         result = llm.invoke(prompt).content.strip()
     except Exception as e:
@@ -447,6 +449,7 @@ VERDICT: pass|fail
 MISSING: write a single comma-separated line of missing items, no numbering, no newlines. Example: MISSING: docstring for get_user, docstring for hash_password, type hints
 SUGGESTIONS: one concrete improvement suggestion"""
 
+    time.sleep(8)
     try:
         result = llm.invoke(prompt).content.strip()
     except Exception as e:
@@ -559,6 +562,7 @@ FIX_1: corrected code for bug 1
 FIX_2: corrected code for bug 2
 FIX_3: corrected code for bug 3"""
 
+    time.sleep(8)
     try:
         result = llm.invoke(prompt).content.strip()
     except Exception as e:
@@ -698,6 +702,7 @@ VIOLATIONS: comma-separated list of violated guidelines, or 'none'
 SEVERITY: low|medium|high|critical
 DETAILS: one sentence summary"""
 
+    time.sleep(8)
     try:
         result = llm.invoke(prompt).content.strip()
     except Exception as e:
@@ -773,6 +778,7 @@ BREAKING: yes|no
 SEVERITY: low|medium|high|critical
 DETAILS: one sentence summary"""
 
+    time.sleep(8)
     try:
         result = llm.invoke(prompt).content.strip()
     except Exception as e:
@@ -890,6 +896,7 @@ VERDICT: pass|fail
 ISSUES: comma-separated issues or 'none'
 SEVERITY: low|medium|high|critical"""
 
+        time.sleep(8)
         try:
             dep_result = llm.invoke(dep_prompt).content.strip()
             dep_lines = {l.split(":")[0].strip(): ":".join(l.split(":")[1:]).strip()
