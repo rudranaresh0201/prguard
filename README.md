@@ -142,22 +142,19 @@ persistence across restarts).
 | Cross-repo signing | Ed25519 (`cryptography`) |
 
 ## Architecture
-backend/
-├── app.py                    # FastAPI entry point
-├── api/
-│   ├── routes_governance.py  # Webhook handler
-│   └── routes_cross_repo.py  # Aftershock: announce / check / pubkey / verify / health
-├── governance/
-│   ├── state.py              # PRState TypedDict
-│   ├── graph.py              # LangGraph pipeline
-│   ├── nodes.py              # agent functions
-│   ├── code_rag.py           # AST indexer + retrieval
-│   ├── github_client.py      # GitHub API actions
-│   └── github_app_auth.py    # GitHub App JWT auth
-├── cross_repo_store.py       # Aftershock: sqlite board (announce/check)
-├── cross_repo_signing.py     # Aftershock: Ed25519 sign/verify
-└── tests/
-    └── test_cross_repo.py    # Aftershock: 17 tests
+
+`backend/app.py` is the FastAPI entry point.
+
+Governance pipeline (`backend/governance/`): `state.py` holds the PRState
+TypedDict, `graph.py` wires up the LangGraph pipeline, `nodes.py` has the
+agent functions, `code_rag.py` does AST indexing and retrieval,
+`github_client.py` and `github_app_auth.py` handle the GitHub side. The
+webhook route is `backend/api/routes_governance.py`.
+
+Aftershock: `backend/cross_repo_store.py` is the sqlite board
+(announce/check), `backend/cross_repo_signing.py` does Ed25519 sign/verify,
+routes live in `backend/api/routes_cross_repo.py`, tests in
+`backend/tests/test_cross_repo.py`.
 
 ## Setup
 
