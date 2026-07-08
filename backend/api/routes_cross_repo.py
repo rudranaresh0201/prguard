@@ -11,6 +11,18 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/cross-repo", tags=["cross-repo"])
 
 
+@router.get("/health")
+async def health() -> dict[str, str]:
+    """Liveness check. Returns 200 if the cross-repo board is reachable.
+
+    Example::
+
+        GET /cross-repo/health
+        -> {"status": "ok"}
+    """
+    return {"status": "ok"}
+
+
 class AnnounceRequest(BaseModel):
     repo: str = Field(..., description='e.g. "myorg/repo-a"')
     symbol: str = Field(..., description='The function, class, or endpoint name that changed, e.g. "charge" or "POST /v1/payments"')

@@ -16,6 +16,13 @@ you only need to agree on the *symbol name* being announced/checked.
 
 **Base URL:** `https://governance-agent.onrender.com`
 
+## Health check
+
+```
+GET /cross-repo/health
+-> {"status": "ok"}
+```
+
 ## When to call `announce`
 
 Call this the moment your own review process determines a change is
