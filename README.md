@@ -1,4 +1,4 @@
-# PRGuard 🛡️
+# PRGuard
 
 > Autonomous PR security and code review agent. Reviews any Pull Request in 13 seconds across any programming language.
 
