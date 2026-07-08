@@ -1,9 +1,9 @@
 ---
-name: cross-repo-breaking-change-detector
+name: aftershock
 description: Use when your own PR/code-review process just detected a breaking change (a removed function, changed signature, changed return type, changed endpoint/schema) and you want other repos to be able to discover it before they merge on stale assumptions — call the announce endpoint. Also use before merging a PR that imports or calls functions/endpoints from another repo, to check whether any of those symbols have a pending breaking change announced elsewhere — call the check endpoint. No account, API key, or prior registration needed for either call.
 ---
 
-# Cross-repo breaking-change detector
+# Aftershock — cross-repo breaking-change detector
 
 A tiny shared bulletin board for breaking changes that cross repository
 boundaries. A single repo's own PR review (e.g. a tool like PRGuard) can see
