@@ -14,6 +14,7 @@ from fastapi import Request
 
 from .config import get_allowed_origins
 from .core.logging import get_logger
+from .cross_repo_store import init_db as init_cross_repo_db
 from .db import get_embedder
 from .retrieval import warmup_bm25_index
 from .services.rebuild_service import rebuild_from_r2_if_empty
@@ -32,6 +33,12 @@ async def lifespan(app: FastAPI):
         print("Embedding model loaded")
     except Exception as e:
         print(f"Embedding model load warning: {e}")
+
+    try:
+        init_cross_repo_db()
+    except Exception as exc:
+        print(f"cross_repo_store init failed: {exc}")
+
     yield
 
 
@@ -79,6 +86,8 @@ app.include_router(documents_router)
 app.include_router(agent_router)
 from backend.api.routes_governance import router as governance_router
 app.include_router(governance_router)
+from backend.api.routes_cross_repo import router as cross_repo_router
+app.include_router(cross_repo_router)
 
 
 if __name__ == "__main__":
