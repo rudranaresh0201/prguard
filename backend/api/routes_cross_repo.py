@@ -29,6 +29,15 @@ class AnnounceResponse(BaseModel):
 class CheckRequest(BaseModel):
     repo: str = Field(..., description='The repo doing the check, e.g. "myorg/repo-b" — excluded from its own results')
     symbols: list[str] = Field(..., description='Function/class/endpoint names this repo imports or calls from elsewhere')
+    expected_repos: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            'Optional: {"symbol": "owning/repo"} for symbols where you know the source repo. '
+            "Symbol names are global on this board, not namespaced per repo — two unrelated repos "
+            'could both define e.g. "charge". Scoping a symbol here avoids matching an unrelated '
+            "repo's same-named symbol. Symbols omitted here match any repo (default behavior)."
+        ),
+    )
 
 
 class BreakingChangeHit(BaseModel):
@@ -94,9 +103,13 @@ async def check(req: CheckRequest) -> CheckResponse:
     Example::
 
         POST /cross-repo/check
-        {"repo": "myorg/repo-b", "symbols": ["charge", "refund"]}
+        {
+          "repo": "myorg/repo-b",
+          "symbols": ["charge", "refund"],
+          "expected_repos": {"charge": "myorg/repo-a"}
+        }
     """
-    hits = check_symbols(req.symbols, exclude_repo=req.repo)
+    hits = check_symbols(req.symbols, exclude_repo=req.repo, expected_repos=req.expected_repos)
     logger.info("[CrossRepo] %s checked %d symbols, %d hits", req.repo, len(req.symbols), len(hits))
     return CheckResponse(
         affected=len(hits) > 0,
