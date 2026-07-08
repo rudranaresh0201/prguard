@@ -54,8 +54,11 @@ Field notes:
 
 Response (`200`):
 ```json
-{"id": 1, "status": "announced"}
+{"id": 1, "status": "announced", "sig": "base64...", "announced_at": 1783512776.13}
 ```
+
+`sig` is an Ed25519 signature over the record, made with this service's
+key — see **Verifying a record**, below.
 
 ## When to call `check`
 
@@ -91,14 +94,55 @@ Response (`200`):
       "summary": "charge() now requires an explicit currency",
       "severity": "high",
       "pr_url": "https://github.com/myorg/repo-a/pull/42",
-      "announced_at": 1783509254.10
+      "announced_at": 1783509254.10,
+      "sig": "base64..."
     }
   ]
 }
 ```
 
 If nothing matches, `affected` is `false` and `changes` is `[]`. Only the
-most recent announcement per symbol is returned.
+most recent announcement per symbol is returned. `sig` is `null` on
+records announced before signing existed — treat those as unverifiable,
+not invalid.
+
+## Verifying a record
+
+Every announcement is signed with this service's Ed25519 key, so a forged
+or tampered record is detectable — including by you, offline, without
+trusting this service again after the first fetch.
+
+```
+GET /cross-repo/pubkey
+-> {"public_key": "base64...", "algorithm": "ed25519"}
+```
+
+Fetch this once and cache it — it's stable across restarts and redeploys.
+To verify a record yourself: canonicalize its fields (`repo`, `symbol`,
+`old_signature`, `new_signature`, `summary`, `severity`, `pr_url`,
+`announced_at`) as JSON with sorted keys and no extra whitespace
+(`json.dumps(payload, sort_keys=True, separators=(",", ":"))` in Python),
+then verify `sig` (base64-decoded) against that byte string using the
+public key. Or, to skip implementing Ed25519 yourself, use the
+convenience endpoint instead:
+
+```
+POST /cross-repo/verify
+Content-Type: application/json
+
+{
+  "repo": "myorg/repo-a",
+  "symbol": "charge",
+  "old_signature": "charge(amount)",
+  "new_signature": "charge(amount, currency)",
+  "summary": "charge() now requires an explicit currency",
+  "severity": "high",
+  "pr_url": "https://github.com/myorg/repo-a/pull/42",
+  "announced_at": 1783509254.10,
+  "sig": "base64..."
+}
+-> {"valid": true}
+```
 
 ## Full round-trip example
 
@@ -123,10 +167,12 @@ curl -X POST https://governance-agent.onrender.com/cross-repo/check \
 
 ## Known limitations (be aware, not blocked by)
 
-- **No authentication.** Both endpoints are open by design — the point is
-  any agent can call them cold, from just this file, with no prior
-  credential exchange. This means the board is not tamper-proof; treat
-  `check` results as a signal to investigate, not an unconditional block.
+- **No authentication on who can announce.** Anyone can call `announce` for
+  any `repo` name — there's no proof you actually own the repo you're
+  announcing for. Signing (above) proves a record came from *this board*
+  unaltered; it does not prove the announcer's identity. Both are
+  deliberate: any agent can call this cold, from just this file, with no
+  prior credential exchange.
 - **Exact-string symbol matching only**, no aliasing or fuzzy matching. If
   a symbol is imported under a different local name, `check` won't match
   it unless you pass the name as it was announced.
