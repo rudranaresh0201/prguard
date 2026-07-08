@@ -59,11 +59,16 @@ in another repo — pass the names of everything external it touches.
 POST /cross-repo/check
 Content-Type: application/json
 
-{"repo": "myorg/repo-b", "symbols": ["charge", "refund"]}
+{
+  "repo": "myorg/repo-b",
+  "symbols": ["charge", "refund"],
+  "expected_repos": {"charge": "myorg/repo-a"}
+}
 ```
 
 - `repo` — your repo. Any announcement made *by this same repo* is excluded from the results (seeing your own announcement reflected back isn't useful).
 - `symbols` — every external function/class/endpoint name your diff depends on. Check as many as you can identify; unmatched names simply don't appear in the results.
+- `expected_repos` (optional) — `{"symbol": "owning/repo"}` for symbols where you know the source repo (e.g. from the import statement). Symbol names are global on this board, not namespaced per repo — two unrelated repos could both define e.g. `charge`. Scoping a symbol here restricts its match to only that repo, avoiding a false positive from an unrelated same-named symbol elsewhere. Symbols you omit here still match any repo (the simpler, unscoped behavior) — use scoping whenever you can, it's strictly safer.
 
 Response (`200`):
 ```json
