@@ -86,6 +86,48 @@ To apply them automatically, comment on any PR:
 
 The agent pushes the corrected code to your branch. You review, then merge.
 
+## Aftershock — Cross-Repo Breaking-Change Detection
+
+PRGuard's `api_change_node` already catches breaking changes within a
+single repo's own diff — a removed function, a changed signature, a
+changed response schema. What it can't see is whether some *other*,
+unrelated repo has an open PR still depending on the exact thing that
+just broke, because each repo's pipeline only ever gets its own diff.
+
+**Aftershock** closes that gap: a tiny shared, cryptographically-signed
+board any repo can post a breaking change to, and any repo can check
+against — no prior registration, no shared secret, no two repos needing
+to know about each other in advance. Full spec for agents:
+[`SKILL.md`](./SKILL.md).
+
+```
+GET  /cross-repo/health    — liveness check
+GET  /cross-repo/pubkey    — Ed25519 public key, for offline signature verification
+POST /cross-repo/announce  — record a breaking change (signed before storage)
+POST /cross-repo/check     — check your dependencies against the board
+POST /cross-repo/verify    — verify a record's signature server-side
+```
+
+```bash
+# Repo A announces it just broke `charge`
+curl -X POST https://governance-agent.onrender.com/cross-repo/announce \
+  -H "Content-Type: application/json" \
+  -d '{"repo":"myorg/repo-a","symbol":"charge","old_signature":"charge(amount)","new_signature":"charge(amount, currency)","summary":"currency now required","severity":"high","pr_url":"https://github.com/myorg/repo-a/pull/42"}'
+
+# Repo B checks before merging a PR that depends on charge()
+curl -X POST https://governance-agent.onrender.com/cross-repo/check \
+  -H "Content-Type: application/json" \
+  -d '{"repo":"myorg/repo-b","symbols":["charge"]}'
+```
+
+Every announcement is signed with the service's Ed25519 key before it's
+stored, so a forged or tampered record is detectable by anyone, offline,
+forever — fetch the public key once from `/cross-repo/pubkey` and verify
+locally without trusting the service again. Tests:
+[`backend/tests/test_cross_repo.py`](./backend/tests/test_cross_repo.py)
+(17 tests — signing, tamper detection, repo-scoped matching, key
+persistence across restarts).
+
 ## Tech Stack
 
 | Component | Technology |
@@ -97,19 +139,25 @@ The agent pushes the corrected code to your branch. You review, then merge.
 | GitHub Integration | PyGitHub + GitHub App |
 | API Server | FastAPI |
 | Deployment | Render |
+| Cross-repo signing | Ed25519 (`cryptography`) |
 
 ## Architecture
 backend/
 ├── app.py                    # FastAPI entry point
 ├── api/
-│   └── routes_governance.py  # Webhook handler
+│   ├── routes_governance.py  # Webhook handler
+│   └── routes_cross_repo.py  # Aftershock: announce / check / pubkey / verify / health
 ├── governance/
 │   ├── state.py              # PRState TypedDict
 │   ├── graph.py              # LangGraph pipeline
-│   ├── nodes.py              # 5 agent functions
+│   ├── nodes.py              # agent functions
 │   ├── code_rag.py           # AST indexer + retrieval
 │   ├── github_client.py      # GitHub API actions
 │   └── github_app_auth.py    # GitHub App JWT auth
+├── cross_repo_store.py       # Aftershock: sqlite board (announce/check)
+├── cross_repo_signing.py     # Aftershock: Ed25519 sign/verify
+└── tests/
+    └── test_cross_repo.py    # Aftershock: 17 tests
 
 ## Setup
 
