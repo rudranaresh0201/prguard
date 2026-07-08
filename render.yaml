@@ -27,6 +27,8 @@ services:
         value: /tmp/audit_logs
       - key: CROSS_REPO_DB_PATH
         value: /data/cross_repo.db
+      - key: CROSS_REPO_SIGNING_KEY_PATH
+        value: /data/cross_repo_signing.key
     disk:
       name: audit-logs
       mountPath: /data

@@ -4,7 +4,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from backend.core.logging import get_logger
-from backend.cross_repo_store import announce_change, check_symbols
+from backend.cross_repo_signing import get_public_key_b64
+from backend.cross_repo_store import announce_change, check_symbols, verify_record
 
 logger = get_logger(__name__)
 
@@ -36,6 +37,8 @@ class AnnounceRequest(BaseModel):
 class AnnounceResponse(BaseModel):
     id: int
     status: str = "announced"
+    sig: str
+    announced_at: float
 
 
 class CheckRequest(BaseModel):
@@ -62,11 +65,36 @@ class BreakingChangeHit(BaseModel):
     severity: str
     pr_url: str
     announced_at: float
+    sig: str | None = Field(
+        default=None,
+        description="Ed25519 signature over the record, base64. Null for records announced before signing existed.",
+    )
 
 
 class CheckResponse(BaseModel):
     affected: bool
     changes: list[BreakingChangeHit]
+
+
+class PubkeyResponse(BaseModel):
+    public_key: str
+    algorithm: str = "ed25519"
+
+
+class VerifyRequest(BaseModel):
+    repo: str
+    symbol: str
+    old_signature: str
+    new_signature: str
+    summary: str
+    severity: str
+    pr_url: str
+    announced_at: float
+    sig: str
+
+
+class VerifyResponse(BaseModel):
+    valid: bool
 
 
 @router.post("/announce", response_model=AnnounceResponse)
@@ -76,7 +104,9 @@ async def announce(req: AnnounceRequest) -> AnnounceResponse:
     Call this the moment your own PR review pipeline detects a breaking
     change (e.g. PRGuard's ``api_change_node`` flags ``breaking_changes:
     True``). No prior registration or shared secret needed — any repo can
-    announce.
+    announce. The stored record is signed with this service's Ed25519 key
+    (fetch the public key from ``GET /cross-repo/pubkey``), so a forged or
+    tampered announcement is detectable by anyone, offline, forever.
 
     Example::
 
@@ -91,7 +121,7 @@ async def announce(req: AnnounceRequest) -> AnnounceResponse:
           "pr_url": "https://github.com/myorg/repo-a/pull/42"
         }
     """
-    change_id = announce_change(
+    record = announce_change(
         repo=req.repo,
         symbol=req.symbol,
         old_signature=req.old_signature,
@@ -100,8 +130,8 @@ async def announce(req: AnnounceRequest) -> AnnounceResponse:
         severity=req.severity,
         pr_url=req.pr_url,
     )
-    logger.info("[CrossRepo] %s announced breaking change to %s (id=%s)", req.repo, req.symbol, change_id)
-    return AnnounceResponse(id=change_id)
+    logger.info("[CrossRepo] %s announced breaking change to %s (id=%s)", req.repo, req.symbol, record["id"])
+    return AnnounceResponse(id=record["id"], sig=record["sig"], announced_at=record["announced_at"])
 
 
 @router.post("/check", response_model=CheckResponse)
@@ -127,3 +157,38 @@ async def check(req: CheckRequest) -> CheckResponse:
         affected=len(hits) > 0,
         changes=[BreakingChangeHit(**hit) for hit in hits],
     )
+
+
+@router.get("/pubkey", response_model=PubkeyResponse)
+async def pubkey() -> PubkeyResponse:
+    """Return this service's Ed25519 public key.
+
+    Fetch this once and cache it — it's stable across restarts and
+    redeploys (see ``CROSS_REPO_SIGNING_KEY_PATH``). Use it to verify any
+    announcement's ``sig`` offline, without calling this service again.
+
+    Example::
+
+        GET /cross-repo/pubkey
+        -> {"public_key": "base64...", "algorithm": "ed25519"}
+    """
+    return PubkeyResponse(public_key=get_public_key_b64())
+
+
+@router.post("/verify", response_model=VerifyResponse)
+async def verify(req: VerifyRequest) -> VerifyResponse:
+    """Verify a change record's signature server-side.
+
+    Convenience endpoint for callers who'd rather not implement Ed25519
+    verification themselves — pass back exactly the fields a ``check`` hit
+    gave you (including ``sig``) and get a yes/no. For offline verification
+    that doesn't depend on trusting this service at verify-time, use
+    ``GET /cross-repo/pubkey`` and verify locally instead.
+
+    Example::
+
+        POST /cross-repo/verify
+        {"repo": "myorg/repo-a", "symbol": "charge", ..., "sig": "..."}
+        -> {"valid": true}
+    """
+    return VerifyResponse(valid=verify_record(req.model_dump()))

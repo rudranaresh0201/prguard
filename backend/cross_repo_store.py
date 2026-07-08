@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import cross_repo_signing
 from .core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -40,13 +41,18 @@ def init_db() -> None:
                 summary TEXT,
                 severity TEXT,
                 pr_url TEXT,
-                announced_at REAL NOT NULL
+                announced_at REAL NOT NULL,
+                sig TEXT
             )
             """
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_breaking_changes_symbol ON breaking_changes(symbol)"
         )
+        # Migration: existing deployments created the table before `sig` existed.
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(breaking_changes)")}
+        if "sig" not in existing_cols:
+            conn.execute("ALTER TABLE breaking_changes ADD COLUMN sig TEXT")
         conn.commit()
     logger.info("[CrossRepo] DB ready at %s", DB_PATH)
 
@@ -59,12 +65,17 @@ def announce_change(
     summary: str,
     severity: str,
     pr_url: str,
-) -> int:
+) -> dict[str, Any]:
     """Record a breaking change so other repos can discover it via check_symbols.
+
+    The record is signed with this service's Ed25519 key before it's stored,
+    so any caller can later verify it actually came from this board and was
+    not tampered with in transit or forged -- fetch the public key once from
+    ``get_public_key_b64`` and verify offline forever after.
 
     Example::
 
-        change_id = announce_change(
+        record = announce_change(
             repo="myorg/repo-a",
             symbol="charge",
             old_signature="charge(amount)",
@@ -73,18 +84,32 @@ def announce_change(
             severity="high",
             pr_url="https://github.com/myorg/repo-a/pull/42",
         )
+        record["id"], record["sig"]
     """
+    announced_at = time.time()
+    signable = {
+        "repo": repo,
+        "symbol": symbol,
+        "old_signature": old_signature,
+        "new_signature": new_signature,
+        "summary": summary,
+        "severity": severity,
+        "pr_url": pr_url,
+        "announced_at": announced_at,
+    }
+    sig = cross_repo_signing.sign(signable)
+
     with _lock, _connect() as conn:
         cur = conn.execute(
             """
             INSERT INTO breaking_changes
-                (repo, symbol, old_signature, new_signature, summary, severity, pr_url, announced_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (repo, symbol, old_signature, new_signature, summary, severity, pr_url, announced_at, sig)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (repo, symbol, old_signature, new_signature, summary, severity, pr_url, time.time()),
+            (repo, symbol, old_signature, new_signature, summary, severity, pr_url, announced_at, sig),
         )
         conn.commit()
-        return int(cur.lastrowid)
+        return {**signable, "id": int(cur.lastrowid), "sig": sig}
 
 
 def check_symbols(
@@ -141,3 +166,29 @@ def check_symbols(
         seen_symbols.add(row["symbol"])
         hits.append(dict(row))
     return hits
+
+
+def verify_record(record: dict[str, Any]) -> bool:
+    """Verify a change record's signature against this service's current key.
+
+    ``record`` must contain the same fields ``announce_change`` signed
+    (``repo``, ``symbol``, ``old_signature``, ``new_signature``, ``summary``,
+    ``severity``, ``pr_url``, ``announced_at``) plus ``sig``.
+
+    Example::
+
+        ok = verify_record(hit)  # hit came from check_symbols()
+    """
+    if not record.get("sig"):
+        return False
+    signable = {
+        "repo": record["repo"],
+        "symbol": record["symbol"],
+        "old_signature": record["old_signature"],
+        "new_signature": record["new_signature"],
+        "summary": record["summary"],
+        "severity": record["severity"],
+        "pr_url": record["pr_url"],
+        "announced_at": record["announced_at"],
+    }
+    return cross_repo_signing.verify(signable, record["sig"])
