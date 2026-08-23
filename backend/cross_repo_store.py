@@ -148,7 +148,7 @@ def check_symbols(
     query = f"""
         SELECT * FROM breaking_changes
         WHERE symbol IN ({placeholders})
-        ORDER BY announced_at DESC
+        ORDER BY announced_at DESC, id DESC
     """
     with _lock, _connect() as conn:
         rows = conn.execute(query, symbols).fetchall()

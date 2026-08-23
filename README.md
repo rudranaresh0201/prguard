@@ -12,7 +12,7 @@ Tested against 16 known vulnerabilities across 5 languages:
 |--------|-------|
 | Recall | 100% (16/16 issues caught) |
 | Precision | 94.12% (1 false positive) |
-| Review time | ~13 seconds |
+| Review time | ~1-2 minutes (includes intentional per-node delays to stay within Groq's rate limits) |
 | Languages tested | Python, Solidity, Bash, Dockerfile |
 
 ## What It Catches
@@ -160,8 +160,8 @@ routes live in `backend/api/routes_cross_repo.py`, tests in
 
 ### 1. Clone and install
 ```bash
-git clone https://github.com/rudranaresh0201/rag-
-cd rag-
+git clone https://github.com/rudranaresh0201/prguard
+cd prguard
 pip install -r backend/requirements.txt
 ```
 
