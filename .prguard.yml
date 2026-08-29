@@ -1,0 +1,14 @@
+name: Enterprise Guidelines
+rules:
+  - name: No direct SQL queries
+    description: Use ORM methods, never raw SQL strings
+    severity: high
+  - name: No hardcoded credentials
+    description: All secrets must use environment variables
+    severity: critical
+  - name: All public functions must have docstrings
+    description: Public functions require docstrings
+    severity: medium
+  - name: No debug mode in production configs
+    description: DEBUG must be False in settings files
+    severity: high
