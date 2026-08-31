@@ -1,3 +1,10 @@
+# NOTE ON FREE-TIER STORAGE
+# /tmp is wiped on every restart, so the cross-repo SQLite store and the
+# Ed25519 signing key are regenerated each cold start. That is fine for a demo
+# and wrong for real use: a regenerated key invalidates any notice a dependent
+# repo has already verified. Mount a real disk on a paid instance before
+# anyone depends on the signatures.
+
 # GitHub App webhook event subscriptions (set in GitHub App settings, not here):
 #   - pull_request  (opened, synchronize, reopened)
 #   - issue_comment (created) — required for /governance fix command
@@ -6,6 +13,7 @@ services:
   - type: web
     name: governance-agent
     runtime: python
+    plan: free
     buildCommand: pip install -r backend/requirements.txt && python -c "from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2; ONNXMiniLM_L6_V2()"
     startCommand: uvicorn backend.app:app --host 0.0.0.0 --port $PORT
     envVars:
@@ -26,10 +34,6 @@ services:
       - key: AUDIT_LOG_DIR
         value: /tmp/audit_logs
       - key: CROSS_REPO_DB_PATH
-        value: /data/cross_repo.db
+        value: /tmp/cross_repo.db
       - key: CROSS_REPO_SIGNING_KEY_PATH
-        value: /data/cross_repo_signing.key
-    disk:
-      name: audit-logs
-      mountPath: /data
-      sizeGB: 1
+        value: /tmp/cross_repo_signing.key
