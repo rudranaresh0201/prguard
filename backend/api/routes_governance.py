@@ -136,6 +136,17 @@ async def run_governance_pipeline(
 
     except Exception as e:
         logger.exception("[Governance] ERROR building state for PR #%s: %s", pr_number, e)
+        try:
+            fallback_token = os.getenv("GITHUB_TOKEN")
+            from backend.governance.github_client import post_pr_comment
+            post_pr_comment(
+                pr_number,
+                "🚫 Governance agent crashed before review could start "
+                f"(`{type(e).__name__}`). Contact the platform team.",
+                token=fallback_token, repo_name=repo,
+            )
+        except Exception:
+            logger.exception("[Governance] Could not post pre-pipeline crash comment for PR #%s", pr_number)
         raise
 
 async def verify_internal_token(x_internal_token: str = Header(None)):

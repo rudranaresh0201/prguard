@@ -26,5 +26,7 @@ RAG_RERANK_WINDOW = int(os.getenv("RAG_RERANK_WINDOW", "500"))
 RAG_RRF_K = int(os.getenv("RAG_RRF_K", "60"))
 
 # ── Agent / LLM ────────────────────────────────────────────
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+# Groq deprecated llama-3.1-8b-instant; gpt-oss-20b is the current
+# equivalent-tier model (verified live against Groq's /models 2026-09-18).
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 AGENT_WEB_RESULTS = int(os.getenv("AGENT_WEB_RESULTS", "5"))
