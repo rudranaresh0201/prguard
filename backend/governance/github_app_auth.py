@@ -6,6 +6,11 @@ import jwt
 GITHUB_APP_ID = os.getenv("GITHUB_APP_ID")
 GITHUB_APP_PRIVATE_KEY = os.getenv("GITHUB_APP_PRIVATE_KEY")
 
+if not GITHUB_APP_ID:
+    raise RuntimeError("GITHUB_APP_ID env var must be set before starting the server")
+if not GITHUB_APP_PRIVATE_KEY:
+    raise RuntimeError("GITHUB_APP_PRIVATE_KEY env var must be set before starting the server")
+
 def generate_jwt() -> str:
     """Generate a JWT for GitHub App authentication."""
     now = int(time.time())

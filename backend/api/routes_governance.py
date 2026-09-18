@@ -311,3 +311,14 @@ async def governance_health():
         "status": "ok",
         "codebase_chunks": col.count(),
     }
+
+@router.post("/index")
+async def trigger_index(_: None = Depends(verify_internal_token)):
+    """Index this repo's own source into CodeRAG's collection. Never wired up
+    automatically anywhere -- must be called explicitly at least once."""
+    from pathlib import Path
+    from backend.governance.code_rag import index_codebase, get_code_collection
+    repo_root = Path(__file__).resolve().parents[2]
+    index_codebase(str(repo_root))
+    col = get_code_collection()
+    return {"status": "indexed", "codebase_chunks": col.count()}
