@@ -186,6 +186,10 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     payload = json.loads(payload_bytes)
     event = request.headers.get("X-GitHub-Event", "")
     installation_id = payload.get("installation", {}).get("id")
+    logger.warning(
+        "[Governance] webhook received: event=%r action=%r installation_id=%r",
+        event, payload.get("action"), installation_id,
+    )
 
     if event == "installation":
         action = payload.get("action")
