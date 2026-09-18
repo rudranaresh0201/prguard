@@ -321,10 +321,13 @@ def _run_index():
     logger.warning("[Governance] Indexing complete: %s chunks", col.count())
 
 @router.post("/index")
-async def trigger_index(background_tasks: BackgroundTasks, _: None = Depends(verify_internal_token)):
-    """Index this repo's own source into CodeRAG's collection, in the background
-    so it doesn't block the single worker process. Never wired up automatically
-    anywhere -- must be called explicitly at least once. Poll /governance/health
-    for codebase_chunks to know when it's done."""
-    background_tasks.add_task(_run_index)
+async def trigger_index(_: None = Depends(verify_internal_token)):
+    """Index this repo's own source into CodeRAG's collection, offloaded to a
+    real thread (not just a deferred BackgroundTask -- that still runs on the
+    single event-loop thread and blocks it for CPU-bound work) so the single
+    worker process can keep serving other requests while this runs. Never
+    wired up automatically anywhere -- must be called explicitly at least
+    once. Poll /governance/health for codebase_chunks to know when it's done."""
+    import asyncio
+    asyncio.create_task(asyncio.to_thread(_run_index))
     return {"status": "indexing_started"}
